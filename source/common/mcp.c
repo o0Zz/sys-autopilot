@@ -7,6 +7,7 @@
 #include "json.h"
 #include "oauth.h"
 #include "power.h"
+#include "process.h"
 #include "jstream.h"
 #include "routes.h"
 #include "screen.h"
@@ -890,6 +891,127 @@ static void tool_power(HttpRequest *req, const char *id, PowerAction action,
     power_schedule(action); // executed after this response is flushed
 }
 
+// --- process control ---------------------------------------------------------
+
+// Shared by the four process tools. Reports its own error and returns false.
+static bool tool_process_title_id(HttpRequest *req, const char *id,
+                                  const JsonDoc *doc, int args, uint64_t *out) {
+    if (!process_available()) {
+        send_tool_error(req->fd, id, "process control unavailable");
+        return false;
+    }
+
+    char raw[32] = {0};
+    int t = json_obj_get(doc, args, "titleId");
+    if (t < 0 || !json_get_string(doc, t, raw, sizeof(raw)) || raw[0] == '\0') {
+        send_tool_error(req->fd, id, "missing string 'titleId'");
+        return false;
+    }
+
+    const char *p = raw;
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+        p += 2;
+    if (*p == '\0') {
+        send_tool_error(req->fd, id, "malformed 'titleId' (expected 16 hex digits)");
+        return false;
+    }
+
+    uint64_t v = 0;
+    for (; *p; ++p) {
+        int d;
+        if (*p >= '0' && *p <= '9')      d = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') d = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') d = *p - 'A' + 10;
+        else {
+            send_tool_error(req->fd, id, "malformed 'titleId' (expected 16 hex digits)");
+            return false;
+        }
+        v = (v << 4) | (uint64_t)d;
+    }
+
+    *out = v;
+    return true;
+}
+
+static void tool_process_status(HttpRequest *req, const char *id,
+                                const JsonDoc *doc, int args) {
+    uint64_t tid;
+    if (!tool_process_title_id(req, id, doc, args, &tid))
+        return;
+
+    ProcessStatus st;
+    char msg[160];
+    if (!process_status(tid, &st)) {
+        send_tool_error(req->fd, id, "status query failed");
+        return;
+    }
+    if (st.running)
+        snprintf(msg, sizeof(msg), "%016llx is running (pid %llu)",
+                 (unsigned long long)tid, (unsigned long long)st.pid);
+    else
+        snprintf(msg, sizeof(msg), "%016llx is not running",
+                 (unsigned long long)tid);
+    send_tool_ok(req->fd, id, msg);
+}
+
+static void tool_process_start(HttpRequest *req, const char *id,
+                               const JsonDoc *doc, int args) {
+    uint64_t tid;
+    if (!tool_process_title_id(req, id, doc, args, &tid))
+        return;
+
+    uint64_t pid = 0;
+    uint32_t rc = 0;
+    char msg[160];
+    if (!process_start(tid, &pid, &rc)) {
+        snprintf(msg, sizeof(msg), "failed to launch %016llx (rc 0x%08x)",
+                 (unsigned long long)tid, rc);
+        send_tool_error(req->fd, id, msg);
+        return;
+    }
+    snprintf(msg, sizeof(msg), "launched %016llx (pid %llu)",
+             (unsigned long long)tid, (unsigned long long)pid);
+    send_tool_ok(req->fd, id, msg);
+}
+
+static void tool_process_stop(HttpRequest *req, const char *id,
+                              const JsonDoc *doc, int args) {
+    uint64_t tid;
+    if (!tool_process_title_id(req, id, doc, args, &tid))
+        return;
+
+    uint32_t rc = 0;
+    char msg[160];
+    if (!process_stop(tid, &rc)) {
+        snprintf(msg, sizeof(msg), "failed to terminate %016llx (rc 0x%08x)",
+                 (unsigned long long)tid, rc);
+        send_tool_error(req->fd, id, msg);
+        return;
+    }
+    snprintf(msg, sizeof(msg), "terminated %016llx", (unsigned long long)tid);
+    send_tool_ok(req->fd, id, msg);
+}
+
+static void tool_process_restart(HttpRequest *req, const char *id,
+                                 const JsonDoc *doc, int args) {
+    uint64_t tid;
+    if (!tool_process_title_id(req, id, doc, args, &tid))
+        return;
+
+    uint64_t pid = 0;
+    uint32_t rc = 0;
+    char msg[160];
+    if (!process_restart(tid, &pid, &rc)) {
+        snprintf(msg, sizeof(msg), "failed to restart %016llx (rc 0x%08x)",
+                 (unsigned long long)tid, rc);
+        send_tool_error(req->fd, id, msg);
+        return;
+    }
+    snprintf(msg, sizeof(msg), "restarted %016llx (pid %llu)",
+             (unsigned long long)tid, (unsigned long long)pid);
+    send_tool_ok(req->fd, id, msg);
+}
+
 // --- JSON-RPC dispatch -------------------------------------------------------
 
 static void handle_initialize(HttpRequest *req, const char *id, const JsonDoc *doc, int params) {
@@ -952,6 +1074,10 @@ static void handle_tools_call(HttpRequest *req, const char *id, const JsonDoc *d
         tool_power(req, id, PowerAction_PowerOff,
                    "powering off; a human must press the power button to turn "
                    "the console back on");
+    else if (strcmp(name, "process_status") == 0)  tool_process_status(req, id, doc, args);
+    else if (strcmp(name, "process_start") == 0)   tool_process_start(req, id, doc, args);
+    else if (strcmp(name, "process_stop") == 0)    tool_process_stop(req, id, doc, args);
+    else if (strcmp(name, "process_restart") == 0) tool_process_restart(req, id, doc, args);
     else if (strcmp(name, "get_theme") == 0)        tool_get_theme(req, id);
     else if (strcmp(name, "set_theme") == 0)        tool_set_theme(req, id, doc, args);
     else if (strcmp(name, "get_nickname") == 0)     tool_get_nickname(req, id);
