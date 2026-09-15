@@ -15,6 +15,7 @@
 #include "mcp.h"
 #include "oauth.h"
 #include "power.h"
+#include "process.h"
 
 extern uint64_t stub_tap_mask;
 extern int stub_tap_duration;
@@ -359,6 +360,71 @@ static void test_power_tools(void) {
     printf("power tools ok\n");
 }
 
+static void test_process_tools(void) {
+    // The host build of process.c models a single running program, which is
+    // enough to drive every branch of the tool layer.
+    const char *TID = "690000000000000d";
+    char body[256];
+
+    snprintf(body, sizeof(body),
+             "{\"jsonrpc\":\"2.0\",\"id\":30,\"method\":\"tools/call\",\"params\":"
+             "{\"name\":\"process_status\",\"arguments\":{\"titleId\":\"%s\"}}}", TID);
+    const char *r = do_rpc(body);
+    assert(strstr(r, "\"isError\":false"));
+    assert(strstr(r, "is not running"));
+
+    snprintf(body, sizeof(body),
+             "{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"tools/call\",\"params\":"
+             "{\"name\":\"process_start\",\"arguments\":{\"titleId\":\"%s\"}}}", TID);
+    r = do_rpc(body);
+    assert(strstr(r, "\"isError\":false"));
+    assert(strstr(r, "launched 690000000000000d"));
+
+    // Now visible as running.
+    snprintf(body, sizeof(body),
+             "{\"jsonrpc\":\"2.0\",\"id\":32,\"method\":\"tools/call\",\"params\":"
+             "{\"name\":\"process_status\",\"arguments\":{\"titleId\":\"%s\"}}}", TID);
+    r = do_rpc(body);
+    assert(strstr(r, "is running (pid"));
+
+    // Launching twice is an in-band tool error, not a transport error.
+    snprintf(body, sizeof(body),
+             "{\"jsonrpc\":\"2.0\",\"id\":33,\"method\":\"tools/call\",\"params\":"
+             "{\"name\":\"process_start\",\"arguments\":{\"titleId\":\"%s\"}}}", TID);
+    r = do_rpc(body);
+    assert(strstr(r, "\"isError\":true"));
+
+    // A 0x prefix is accepted, and restart works from the running state.
+    snprintf(body, sizeof(body),
+             "{\"jsonrpc\":\"2.0\",\"id\":34,\"method\":\"tools/call\",\"params\":"
+             "{\"name\":\"process_restart\",\"arguments\":{\"titleId\":\"0x%s\"}}}", TID);
+    r = do_rpc(body);
+    assert(strstr(r, "\"isError\":false"));
+    assert(strstr(r, "restarted 690000000000000d"));
+
+    snprintf(body, sizeof(body),
+             "{\"jsonrpc\":\"2.0\",\"id\":35,\"method\":\"tools/call\",\"params\":"
+             "{\"name\":\"process_stop\",\"arguments\":{\"titleId\":\"%s\"}}}", TID);
+    r = do_rpc(body);
+    assert(strstr(r, "\"isError\":false"));
+
+    // Stopping something that is not running fails.
+    r = do_rpc(body);
+    assert(strstr(r, "\"isError\":true"));
+
+    // Argument validation.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":36,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"process_start\",\"arguments\":{}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(strstr(r, "titleId"));
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":37,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"process_start\",\"arguments\":{\"titleId\":\"nothex\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+
+    printf("process tools ok\n");
+}
+
 static Config g_cfg_for_oauth;
 
 int main(void) {
@@ -377,6 +443,7 @@ int main(void) {
     test_input_with_screenshot();
     test_create_token();
     test_power_tools();
+    test_process_tools();
     printf("all mcp tests passed\n");
     return 0;
 }

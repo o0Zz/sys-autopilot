@@ -9,6 +9,7 @@
 #include "mcp.h"
 #include "oauth.h"
 #include "power.h"
+#include "process.h"
 #include "screen.h"
 #include "settings.h"
 #include "log.h"
@@ -517,6 +518,135 @@ static void handle_power_off(HttpRequest *req) {
                  "powering off; physical power button required to turn back on");
 }
 
+// --- /process/* ----------------------------------------------------------------
+
+// Title ids are 16 hex digits, matching the form /titles reports them in. They
+// are accepted from the query string (GET) or the JSON body (POST), and always
+// reported back as strings: a u64 does not survive a JSON number in most
+// clients.
+static bool process_arg_title_id(HttpRequest *req, uint64_t *out) {
+    char raw[32] = {0};
+
+    if (strcmp(req->method, "GET") == 0) {
+        if (!http_query_get(req, "titleId", raw, sizeof(raw))) {
+            http_send_error(req->fd, 400, "missing 'titleId' query parameter");
+            return false;
+        }
+    } else {
+        static JsonDoc doc;
+        int root = read_json_body(req, &doc);
+        if (root < 0)
+            return false; // response already sent
+        int t = json_obj_get(&doc, root, "titleId");
+        if (t < 0 || !json_get_string(&doc, t, raw, sizeof(raw))) {
+            http_send_error(req->fd, 400, "missing string 'titleId'");
+            return false;
+        }
+    }
+
+    const char *p = raw;
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+        p += 2;
+    if (*p == '\0') {
+        http_send_error(req->fd, 400, "malformed 'titleId' (expected hex)");
+        return false;
+    }
+
+    uint64_t v = 0;
+    for (; *p; ++p) {
+        int d;
+        if (*p >= '0' && *p <= '9')      d = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') d = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') d = *p - 'A' + 10;
+        else {
+            http_send_error(req->fd, 400, "malformed 'titleId' (expected hex)");
+            return false;
+        }
+        v = (v << 4) | (uint64_t)d;
+    }
+
+    *out = v;
+    return true;
+}
+
+static bool process_require_available(HttpRequest *req) {
+    if (process_available())
+        return true;
+    http_send_error(req->fd, 500, "process control unavailable");
+    return false;
+}
+
+static void send_process_error(HttpRequest *req, const char *what, uint32_t rc) {
+    http_send_json(req->fd, 500, "{\"ok\":false,\"error\":\"%s\",\"rc\":\"0x%08x\"}",
+                   what, rc);
+}
+
+static void handle_process_status(HttpRequest *req) {
+    uint64_t tid;
+    if (!process_require_available(req) || !process_arg_title_id(req, &tid))
+        return;
+
+    ProcessStatus st;
+    if (!process_status(tid, &st)) {
+        send_process_error(req, "status query failed", 0);
+        return;
+    }
+    if (st.running)
+        http_send_json(req->fd, 200,
+                       "{\"titleId\":\"%016llx\",\"running\":true,\"pid\":\"%llu\"}",
+                       (unsigned long long)tid, (unsigned long long)st.pid);
+    else
+        http_send_json(req->fd, 200,
+                       "{\"titleId\":\"%016llx\",\"running\":false}",
+                       (unsigned long long)tid);
+}
+
+static void handle_process_start(HttpRequest *req) {
+    uint64_t tid;
+    if (!process_require_available(req) || !process_arg_title_id(req, &tid))
+        return;
+
+    uint64_t pid = 0;
+    uint32_t rc = 0;
+    if (!process_start(tid, &pid, &rc)) {
+        send_process_error(req, "launch failed", rc);
+        return;
+    }
+    http_send_json(req->fd, 200,
+                   "{\"ok\":true,\"titleId\":\"%016llx\",\"pid\":\"%llu\"}",
+                   (unsigned long long)tid, (unsigned long long)pid);
+}
+
+static void handle_process_stop(HttpRequest *req) {
+    uint64_t tid;
+    if (!process_require_available(req) || !process_arg_title_id(req, &tid))
+        return;
+
+    uint32_t rc = 0;
+    if (!process_stop(tid, &rc)) {
+        send_process_error(req, "terminate failed", rc);
+        return;
+    }
+    http_send_json(req->fd, 200, "{\"ok\":true,\"titleId\":\"%016llx\"}",
+                   (unsigned long long)tid);
+}
+
+static void handle_process_restart(HttpRequest *req) {
+    uint64_t tid;
+    if (!process_require_available(req) || !process_arg_title_id(req, &tid))
+        return;
+
+    uint64_t pid = 0;
+    uint32_t rc = 0;
+    if (!process_restart(tid, &pid, &rc)) {
+        send_process_error(req, "restart failed", rc);
+        return;
+    }
+    http_send_json(req->fd, 200,
+                   "{\"ok\":true,\"titleId\":\"%016llx\",\"pid\":\"%llu\"}",
+                   (unsigned long long)tid, (unsigned long long)pid);
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 typedef struct {
@@ -544,6 +674,10 @@ static const Route kRoutes[] = {
     { "PUT",    "/files",             files_handle_put },
     { "DELETE", "/files",             files_handle_delete },
     { "GET",    "/titles",            handle_titles },
+    { "GET",    "/process",           handle_process_status },
+    { "POST",   "/process/start",     handle_process_start },
+    { "POST",   "/process/stop",      handle_process_stop },
+    { "POST",   "/process/restart",   handle_process_restart },
     { "GET",    "/network/dns",       handle_dns_get },
     { "POST",   "/network/dns",       handle_dns_set },
     { "POST",   "/install",           handle_install },

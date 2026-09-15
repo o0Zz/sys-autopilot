@@ -202,6 +202,9 @@ Details:
 | `get_nickname` / `set_nickname` | Read / set the console's device nickname |
 | `get_brightness` / `set_brightness` | Read / set screen brightness (`0.0`–`1.0`) |
 | `get_volume` / `set_volume` | Read / set master volume (`0.0`–`1.0`) |
+| `process_status` | Is the program with this `titleId` running? Returns its pid |
+| `process_start` / `process_stop` | Launch / terminate a program by `titleId` (works for sysmodules with no `boot2.flag`) |
+| `process_restart` | Stop, wait for it to actually exit, then start — the normal way to load a rebuilt sysmodule |
 | `airplane_mode` | Enable airplane mode (disable wireless). **One-way: cuts the server off; cannot be undone remotely** |
 
 Button names: `A B X Y L R ZL ZR PLUS MINUS UP DOWN LEFT RIGHT LSTICK RSTICK
@@ -385,6 +388,34 @@ curl --netrc -X POST "http://<ip>:4150/network/dns" -d '{"automatic":true}'
 Setting DNS rewrites the active connection profile, so the connection may blip
 briefly while it re-applies. Also exposed as the `get_dns` / `set_dns` MCP
 tools. (Requires the `nifm:a` admin service, which the sysmodule opens at boot.)
+
+### Process control
+
+```
+GET  /process?titleId=690000000000000d   -> {"titleId":"...","running":true,"pid":"73"}
+POST /process/start    {"titleId":"690000000000000d"}
+POST /process/stop     {"titleId":"690000000000000d"}
+POST /process/restart  {"titleId":"690000000000000d"}
+```
+
+Start, stop and query any program by its title id — the id `GET /titles`
+reports, and the directory name under `/atmosphere/contents` for a sysmodule.
+A `0x` prefix is accepted. Process ids are returned as strings, since a `u64`
+does not survive a JSON number in most clients.
+
+This is what makes it possible to iterate on a sysmodule without rebooting:
+stop it, `PUT` the rebuilt `exefs.nsp` through `/files`, then start it again.
+
+A program does **not** need a `flags/boot2.flag` to be launched this way; that
+flag only controls whether boot2 starts it automatically. Leaving it off while
+developing is the safer arrangement, because a build that crashes during
+startup can then no longer take the console down with it before anything is
+reachable — you keep a working server to upload the fix through.
+
+`/process/restart` waits for the old process to actually disappear before
+relaunching (up to 3s), so a caller never races a half-dead process. Note that
+`stop` is a hard kill: the program does not shut down cleanly, and one holding
+system resources may leave them attached until the next reboot.
 
 ### Status
 

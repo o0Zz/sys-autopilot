@@ -13,6 +13,11 @@ def buttons_prop():
 path_prop = {"type": "string",
              "description": "Absolute path on the SD card, e.g. /switch/myapp/log.txt"}
 
+tid_prop = {"type": "string",
+            "description": ("Program (title) id as 16 hex digits, e.g. \"690000000000000d\". "
+                            "This is the id /titles reports, and the directory name under "
+                            "/atmosphere/contents for a sysmodule.")}
+
 def screenshot_props():
     return {
         "screenshot": {"type": "boolean",
@@ -191,6 +196,42 @@ tools = [
                         "unreachable - a human must physically press the power button to turn "
                         "the console back on. Only use when explicitly asked to."),
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "process_status",
+        "description": ("Check whether the program with the given title id is currently "
+                        "running, and return its process id if so. Use this to confirm a "
+                        "sysmodule actually came up after starting it, or actually went "
+                        "away after stopping it."),
+        "inputSchema": {"type": "object", "properties": {"titleId": tid_prop},
+                        "required": ["titleId"]},
+    },
+    {
+        "name": "process_start",
+        "description": ("Launch the program with the given title id. Works for sysmodules "
+                        "under /atmosphere/contents whether or not they have a "
+                        "flags/boot2.flag, so a module can be kept out of the boot sequence "
+                        "and started on demand instead. Fails if it is already running."),
+        "inputSchema": {"type": "object", "properties": {"titleId": tid_prop},
+                        "required": ["titleId"]},
+    },
+    {
+        "name": "process_stop",
+        "description": ("Terminate the program with the given title id. WARNING: this is a "
+                        "hard kill, so the program does not get to shut down cleanly; a "
+                        "sysmodule that holds system resources may leave them attached until "
+                        "the next reboot. Fails if it is not running."),
+        "inputSchema": {"type": "object", "properties": {"titleId": tid_prop},
+                        "required": ["titleId"]},
+    },
+    {
+        "name": "process_restart",
+        "description": ("Stop the program with the given title id (if running), wait for it "
+                        "to actually exit, then start it again. This is the normal way to "
+                        "load a rebuilt sysmodule after uploading its exefs.nsp, and avoids "
+                        "the race of starting it while the old process is still dying."),
+        "inputSchema": {"type": "object", "properties": {"titleId": tid_prop},
+                        "required": ["titleId"]},
     },
     {
         "name": "get_theme",

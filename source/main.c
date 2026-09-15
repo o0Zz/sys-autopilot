@@ -10,6 +10,7 @@
 #include "common/netif.h"
 #include "common/oauth.h"
 #include "common/power.h"
+#include "common/process.h"
 #include "common/server.h"
 #include "common/settings.h"
 
@@ -131,11 +132,17 @@ void __appInit(void)
     if (!install_init())
         LOGF("install: services unavailable; /install disabled\n");
 
+    // pm:shell/pm:dmnt for starting, stopping and querying other programs.
+    // Opened while sm is up; non-fatal, the endpoints report unavailability.
+    if (!process_init())
+        LOGF("process: pm unavailable; /process disabled\n");
+
     smExit();
 }
 
 void __appExit(void)
 {
+    process_exit();
     install_exit();
     settings_exit();
     netif_exit();
