@@ -16,6 +16,11 @@ echo "== test_http =="
 cc $CFLAGS -o "$OUT/test_http" test_http.c "$SRC/http.c" "$SRC/base64.c"
 "$OUT/test_http"
 
+echo "== test_explorer =="
+cc $CFLAGS -o "$OUT/test_explorer" test_explorer.c \
+    "$SRC/explorer.c" "$SRC/http.c" "$SRC/base64.c"
+"$OUT/test_explorer"
+
 echo "== test_core =="
 cc $CFLAGS -o "$OUT/test_core" test_core.c \
     "$SRC/base64.c" "$SRC/buttons.c" "$SRC/json.c" "$SRC/jstream.c" "$SRC/sha256.c"

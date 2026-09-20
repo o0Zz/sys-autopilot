@@ -1,9 +1,9 @@
 # sys-autopilot
 
 A Nintendo Switch (Atmosphère) sysmodule that runs a persistent HTTP server on
-the console. It exposes a REST API **and a native MCP (Model Context Protocol)
-endpoint** for taking screenshots, injecting controller input, and
-reading/writing files on the SD card — everything an AI agent needs to drive
+the console. It exposes a REST API, **a native MCP (Model Context Protocol)
+endpoint**, and a browser file explorer for taking screenshots, injecting
+controller input, and reading/writing files on the SD card — everything an AI agent needs to drive
 the Switch while testing homebrew applications.
 
 Typical agent loop:
@@ -224,6 +224,26 @@ base64-decoded straight to disk, so the file size is bounded by the SD card,
 not RAM. But MCP tool arguments are generated token-by-token by the model, so
 multi-megabyte uploads are context-expensive — deploy `.nro` builds with
 `curl -T` against the raw HTTP API instead.
+
+## File explorer
+
+Point a browser at the console and you get a small file manager, served by the
+sysmodule itself:
+
+```
+http://<ip>:4150/          -> redirects to /explorer
+```
+
+Browse the SD card, open a text file and edit it in place (Save writes it
+back), upload by drag-and-drop, download, delete. The **live** checkbox
+re-reads the open file every 2s and keeps the view pinned to the end, which
+makes it a log tail. The page is the same origin as the API, so it just calls
+`/files` directly.
+
+When `username` and `password` are set in `config.ini`, the browser asks for
+them on the first request and reuses them for everything the page does. A
+token-only setup has no browser login: the API still works with
+`Authorization: Bearer`, but the explorer cannot sign in.
 
 ## REST API
 
@@ -496,6 +516,9 @@ source/common/         shared server core
   mdns.c               mDNS / DNS-SD responder (<hostname>.local + service)
   device_info.c        device facts for the DNS-SD TXT record (model/fw/ams)
   routes.c             REST endpoint dispatch, /status
+  explorer.c           built-in browser file explorer (/ and /explorer)
+  explorer.html        its page source (edit this one)
+  explorer_page.h      generated C string (scripts/gen_explorer.py)
   mcp.c                MCP endpoint: JSON-RPC 2.0 dispatch + tools
   mcp_tools.h          generated tools/list payload (scripts/gen_tools.py)
   jstream.c            streaming JSON pre-pass (diverts upload content to disk)

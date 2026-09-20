@@ -1,5 +1,6 @@
 #include "routes.h"
 #include "apiargs.h"
+#include "explorer.h"
 #include "files.h"
 #include "input.h"
 #include "install.h"
@@ -670,6 +671,8 @@ static void handle_controller_detach(HttpRequest *req) { send_input_result(req, 
 static void handle_input_clear(HttpRequest *req)       { send_input_result(req, input_clear()); }
 
 static const Route kRoutes[] = {
+    { "GET",    "/",                  explorer_handle_root },
+    { "GET",    "/explorer",          explorer_handle_page },
     { "GET",    "/screenshot",        handle_screenshot },
     { "GET",    "/status",            handle_status },
     { "POST",   "/input/tap",         handle_input_tap },

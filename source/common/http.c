@@ -392,6 +392,11 @@ void http_send_unauthorized(const HttpRequest *req, bool offer_basic, bool offer
     const char *body = "{\"error\":\"unauthorized\"}";
     char challenges[384];
     int cn = 0;
+    // Basic goes first: a browser loading the explorer picks the first scheme
+    // it understands, and only Basic can be answered from its login prompt.
+    if (offer_basic)
+        cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
+                       "WWW-Authenticate: Basic realm=\"sys-autopilot\"\r\n");
     if (offer_bearer) {
         if (req->host[0]) {
             // Point OAuth-capable MCP clients at the protected resource
@@ -405,9 +410,6 @@ void http_send_unauthorized(const HttpRequest *req, bool offer_basic, bool offer
                            "WWW-Authenticate: Bearer realm=\"sys-autopilot\"\r\n");
         }
     }
-    if (offer_basic)
-        cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
-                       "WWW-Authenticate: Basic realm=\"sys-autopilot\"\r\n");
     challenges[cn] = '\0';
     char hdr[768];
     int n = snprintf(hdr, sizeof(hdr),
