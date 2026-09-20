@@ -15,6 +15,19 @@
 #define RESTART_GRACE_NS   (3ULL * 1000000000ULL)
 #define RESTART_POLL_NS    (50ULL * 1000000ULL)
 
+// __appInit closes the sm session, so hid:dbg cannot be reopened at request
+// time without reconnecting first. Without this the bare hiddbgInitialize()
+// below silently leaves g_hiddbgSrv zeroed, and every later HDLS call fails
+// with kernel InvalidHandle (0xe401) for the rest of the boot.
+static void reopen_hiddbg(void) {
+    if (R_FAILED(smInitialize()))
+        return;
+    Result rc = hiddbgInitialize();
+    if (R_FAILED(rc))
+        LOGF("process: hiddbgInitialize failed rc=0x%x\n", rc);
+    smExit();
+}
+
 static bool g_initialized;
 static u64 g_last_pid;
 static u64 g_last_program_id;
@@ -138,7 +151,7 @@ bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
         // after a launch that never happened.
         if (g_boosted)
             set_boost(0);
-        hiddbgInitialize();
+        reopen_hiddbg();
         if (out_rc)
             *out_rc = rc;
         return false;
@@ -167,7 +180,7 @@ bool process_stop(uint64_t program_id, uint32_t *out_rc) {
     g_last_pid = 0;
     if (g_boosted)
         set_boost(0);
-    hiddbgInitialize(); // take hid:dbg back now that the module has released it
+    reopen_hiddbg(); // take hid:dbg back now that the module has released it
     return true;
 }
 
