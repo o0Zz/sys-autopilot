@@ -32,7 +32,14 @@ static const char *kDefaultConfig =
     "\n"
     "; Write diagnostics to log.txt next to this file (the sysmodule has no\n"
     "; console output). Off by default; set to true when troubleshooting.\n"
-    "log = false\n";
+    "log = false\n"
+    "\n"
+    "[power]\n"
+    "; Hold off auto-sleep while this sysmodule runs. Sleep powers down the\n"
+    "; WLAN module, so the console stops answering until someone presses a\n"
+    "; button on it. Nothing is persisted: set this to false and the console\n"
+    "; sleeps again according to System Settings.\n"
+    "keep_awake = true\n";
 
 static char *trim(char *s) {
     while (isspace((unsigned char)*s)) s++;
@@ -40,6 +47,13 @@ static char *trim(char *s) {
     while (end > s && isspace((unsigned char)end[-1])) end--;
     *end = '\0';
     return s;
+}
+
+static bool is_true(const char *val) {
+    return strcasecmp(val, "true") == 0 ||
+           strcasecmp(val, "1") == 0 ||
+           strcasecmp(val, "yes") == 0 ||
+           strcasecmp(val, "on") == 0;
 }
 
 static void write_default_config(void) {
@@ -55,6 +69,7 @@ static void write_default_config(void) {
 void config_load(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->port = 4150;
+    cfg->keep_awake = true;
 
     FILE *f = fopen(CONFIG_PATH, "rb");
     if (!f) {
@@ -84,6 +99,12 @@ void config_load(Config *cfg) {
         char *key = trim(s);
         char *val = trim(eq + 1);
 
+        if (strcasecmp(section, "power") == 0) {
+            if (strcasecmp(key, "keep_awake") == 0)
+                cfg->keep_awake = is_true(val);
+            continue;
+        }
+
         if (strcasecmp(section, "server") != 0)
             continue;
 
@@ -100,10 +121,7 @@ void config_load(Config *cfg) {
         } else if (strcasecmp(key, "hostname") == 0) {
             snprintf(cfg->hostname, sizeof(cfg->hostname), "%s", val);
         } else if (strcasecmp(key, "log") == 0) {
-            cfg->log = strcasecmp(val, "true") == 0 ||
-                       strcasecmp(val, "1") == 0 ||
-                       strcasecmp(val, "yes") == 0 ||
-                       strcasecmp(val, "on") == 0;
+            cfg->log = is_true(val);
         }
     }
     fclose(f);
@@ -112,10 +130,11 @@ void config_load(Config *cfg) {
     // subsequent LOGF() calls (here and across the server) are captured.
     log_set_enabled(cfg->log);
 
-    LOGF("config: port=%d auth=%s hostname=%s log=%s\n", cfg->port,
+    LOGF("config: port=%d auth=%s hostname=%s log=%s keep_awake=%s\n", cfg->port,
          config_auth_enabled(cfg) ? "enabled" : "disabled",
          cfg->hostname[0] != '\0' ? cfg->hostname : "(auto)",
-         cfg->log ? "on" : "off");
+         cfg->log ? "on" : "off",
+         cfg->keep_awake ? "on" : "off");
 }
 
 bool config_auth_enabled(const Config *cfg) {

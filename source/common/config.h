@@ -18,6 +18,10 @@ typedef struct {
     // Write diagnostics to sdmc:/config/sys-autopilot/log.txt (sysmodule has
     // no stdout). Off by default.
     bool log;
+    // Hold off auto-sleep. Sleep powers down the WLAN module, so the server
+    // becomes unreachable until someone presses a button on the console. On by
+    // default.
+    bool keep_awake;
 } Config;
 
 // Prefix for the auto-generated default hostname ("switch-<serial suffix>").

@@ -43,8 +43,10 @@ config/sys-autopilot/config.ini
 Reboot. The server starts automatically at boot (boot2) and listens on port
 4150 by default.
 
-> Tip: disable auto-sleep in System Settings while driving the console
-> remotely — sleep mode drops the network connection.
+> The console is held awake while the sysmodule runs, because sleep powers
+> down the WLAN module and the server stops answering until someone presses a
+> button on the console. Set `keep_awake = false` in `config.ini` to let it
+> sleep normally.
 
 ## Configuration
 
@@ -74,6 +76,13 @@ password =
 ; Write diagnostics to log.txt next to this file (the sysmodule has no
 ; console output). Off by default; set to true when troubleshooting.
 log = false
+
+[power]
+; Hold off auto-sleep while this sysmodule runs. Sleep powers down the
+; WLAN module, so the console stops answering until someone presses a
+; button on it. Nothing is persisted: set this to false and the console
+; sleeps again according to System Settings.
+keep_awake = true
 ```
 
 Changes take effect after a reboot. Note this is plain HTTP — auth protects
@@ -424,7 +433,7 @@ GET /status
 ```
 
 ```json
-{"version":"1.1.0","firmware":"19.0.1","controllerAttached":true,"uptimeSeconds":4242,"batteryPercent":87,"charging":true}
+{"version":"1.1.0","firmware":"19.0.1","controllerAttached":true,"keepAwake":true,"uptimeSeconds":4242,"batteryPercent":87,"charging":true}
 ```
 
 `batteryPercent`/`charging` are included when the battery service is available.

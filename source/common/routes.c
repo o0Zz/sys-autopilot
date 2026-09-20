@@ -42,6 +42,12 @@ u64 routes_uptime_seconds(void) {
     return armTicksToNs(armGetSystemTick() - g_boot_tick) / 1000000000ULL;
 }
 
+static bool g_keep_awake;
+
+void routes_set_keep_awake(bool on) {
+    g_keep_awake = on;
+}
+
 // Reads and parses a JSON request body into *doc. An absent/empty body parses
 // as an empty object. Returns the root token index, or -1 after sending an
 // error response.
@@ -160,11 +166,13 @@ static void handle_status(HttpRequest *req) {
                        "{\"version\":\"" APP_VERSION "\","
                        "\"firmware\":\"%u.%u.%u\","
                        "\"controllerAttached\":%s,"
+                       "\"keepAwake\":%s,"
                        "\"uptimeSeconds\":%llu,"
                        "\"batteryPercent\":%u,"
                        "\"charging\":%s}",
                        HOSVER_MAJOR(ver), HOSVER_MINOR(ver), HOSVER_MICRO(ver),
                        input_is_attached() ? "true" : "false",
+                       g_keep_awake ? "true" : "false",
                        (unsigned long long)routes_uptime_seconds(),
                        pct, charging ? "true" : "false");
     } else {
@@ -172,9 +180,11 @@ static void handle_status(HttpRequest *req) {
                        "{\"version\":\"" APP_VERSION "\","
                        "\"firmware\":\"%u.%u.%u\","
                        "\"controllerAttached\":%s,"
+                       "\"keepAwake\":%s,"
                        "\"uptimeSeconds\":%llu}",
                        HOSVER_MAJOR(ver), HOSVER_MINOR(ver), HOSVER_MICRO(ver),
                        input_is_attached() ? "true" : "false",
+                       g_keep_awake ? "true" : "false",
                        (unsigned long long)routes_uptime_seconds());
     }
 }

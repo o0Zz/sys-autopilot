@@ -55,3 +55,23 @@ bool power_actions_available(void);
 
 // Executes the action. Returns false on failure.
 bool power_perform(PowerAction action);
+
+// --- Keep-awake ----------------------------------------------------------------
+// Sleep powers down the WLAN module, which makes the server unreachable until
+// someone physically presses a button. Pinging idle:sys resets the auto-sleep
+// idle counter, so the console never reaches its auto-sleep timeout. Nothing is
+// persisted: stop the sysmodule and auto-sleep behaves as configured again.
+
+// Opens the idle:sys session. Must be called while an sm session is open.
+// Returns false when unavailable (dev .nro); power_keepawake_tick() is then a
+// no-op.
+bool power_keepawake_init(void);
+void power_keepawake_exit(void);
+
+// True when the idle:sys session is up, i.e. auto-sleep can actually be held
+// off.
+bool power_keepawake_available(void);
+
+// Resets the auto-sleep counter. Must only be called while awake -- it is IPC,
+// and none may be issued between the sleep acknowledgement and the wake.
+void power_keepawake_tick(void);

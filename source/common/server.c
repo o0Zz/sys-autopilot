@@ -180,6 +180,10 @@ void server_run(const Config *cfg, ServerIdleCb idle) {
     // missed entirely). The loop spins ~every 100ms; check every ~2s.
     int netcheck_ticks = 0;
 
+    // Same throttle for the keep-awake ping. 30s is well inside the shortest
+    // auto-sleep plan the console offers (1 minute).
+    int keepawake_ticks = 0;
+
     // Let the http I/O layer drive the idle callback during transfers too.
     http_set_idle_callback(idle);
 
@@ -222,6 +226,15 @@ void server_run(const Config *cfg, ServerIdleCb idle) {
                 break;
             svcSleepThread(100000000LL); // 100ms between power_poll checks
             continue;
+        }
+
+        // Hold off auto-sleep: sleeping powers down the WLAN module, and the
+        // console then answers nothing until someone physically presses a
+        // button. Runs only while awake, so the ping never lands inside the
+        // sleep window.
+        if (cfg->keep_awake && ++keepawake_ticks >= 300) { // ~30s
+            keepawake_ticks = 0;
+            power_keepawake_tick();
         }
 
         // React to network connectivity changes (wifi connect/disconnect,

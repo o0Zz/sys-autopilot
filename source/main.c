@@ -11,13 +11,14 @@
 #include "common/oauth.h"
 #include "common/power.h"
 #include "common/process.h"
+#include "common/routes.h"
 #include "common/server.h"
 #include "common/settings.h"
 
 // Inner heap: socket transfer memory + stdio buffers + dir listing JSON +
 // headroom for the title installer (ncm IPC, mounting the cnmt NCA). The large
 // fixed buffers (JPEG, I/O, HDLS workmem, install chunk) are static bss.
-#define INNER_HEAP_SIZE 0x400000
+#define INNER_HEAP_SIZE 0x200000
 
 #ifdef __cplusplus
 extern "C" {
@@ -111,6 +112,13 @@ void __appInit(void)
     // the endpoints report unavailability.
     power_spsm_init();
 
+    // idle:sys, used to hold off auto-sleep. Non-fatal: without it the console
+    // sleeps on its timeout and stops answering. The session is opened
+    // unconditionally because config.ini is only read after __appInit; whether
+    // we actually ping is decided by the server loop.
+    if (!power_keepawake_init())
+        LOGF("power: idle:sys unavailable; auto-sleep cannot be held off\n");
+
     // Gather device facts (model/firmware/Atmosphère) for the mDNS TXT record
     // now, while the sm session is still open: the underlying set:sys/spl
     // smGetService calls would fail after smExit(). Best-effort; failures just
@@ -146,6 +154,7 @@ void __appExit(void)
     install_exit();
     settings_exit();
     netif_exit();
+    power_keepawake_exit();
     power_spsm_exit();
     power_exit();
     timeExit();
@@ -164,6 +173,10 @@ int main(int argc, char* argv[])
 {
     Config cfg;
     config_load(&cfg);
+
+    // What GET /status reports: the setting only counts when idle:sys actually
+    // opened.
+    routes_set_keep_awake(cfg.keep_awake && power_keepawake_available());
 
     // OAuth state (config reference + persisted token list).
     oauth_init(&cfg);

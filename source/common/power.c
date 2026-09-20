@@ -144,7 +144,39 @@ bool power_perform(PowerAction action) {
     return R_SUCCEEDED(rc);
 }
 
-#else // host (tests): no PSC / spsm
+static bool g_idle_ok;
+
+bool power_keepawake_init(void) {
+    Result rc = idlesysInitialize();
+    if (R_FAILED(rc)) {
+        LOGF("power: idlesysInitialize failed rc=0x%x\n", rc);
+        return false;
+    }
+    g_idle_ok = true;
+    return true;
+}
+
+bool power_keepawake_available(void) {
+    return g_idle_ok;
+}
+
+void power_keepawake_exit(void) {
+    if (g_idle_ok) {
+        idlesysExit();
+        g_idle_ok = false;
+    }
+}
+
+void power_keepawake_tick(void) {
+    if (!g_idle_ok)
+        return;
+    // Logged only on failure: this runs for the whole lifetime of the console.
+    Result rc = idlesysReportUserIsActive();
+    if (R_FAILED(rc))
+        LOGF("power: idlesysReportUserIsActive failed rc=0x%x\n", rc);
+}
+
+#else // host (tests): no PSC / spsm / idle:sys
 
 static PowerAction g_last_performed;
 
@@ -161,5 +193,10 @@ bool power_perform(PowerAction action) {
     g_last_performed = action;
     return true;
 }
+
+bool power_keepawake_init(void) { return false; }
+bool power_keepawake_available(void) { return false; }
+void power_keepawake_exit(void) {}
+void power_keepawake_tick(void) {}
 
 #endif
