@@ -48,8 +48,21 @@ bool process_status(uint64_t program_id, ProcessStatus *out) {
     // it, so it is not available here at all. Resolve the pid we were handed at
     // launch through pm:info instead: if it still maps to this program, the
     // process is alive.
-    if (g_last_pid != 0 && g_last_program_id == program_id &&
-        R_SUCCEEDED(pminfoInitialize())) {
+    if (g_last_pid != 0 && g_last_program_id == program_id) {
+        // __appInit closes the sm session, so no service can be opened at
+        // request time without reopening it first. smInitialize is refcounted
+        // and reconnects to the named port, so this is safe to do per call.
+        Result irc = smInitialize();
+        if (R_SUCCEEDED(irc)) {
+            irc = pminfoInitialize();
+            smExit();
+        }
+        if (R_FAILED(irc)) {
+            LOGF("process: pminfoInitialize failed rc=0x%x\n", irc);
+            out->running = false;
+            out->pid = 0;
+            return true;
+        }
         u64 resolved = 0;
         Result rc = pminfoGetProgramId(&resolved, g_last_pid);
         pminfoExit();
