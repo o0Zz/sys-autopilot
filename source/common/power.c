@@ -170,10 +170,16 @@ void power_keepawake_exit(void) {
 void power_keepawake_tick(void) {
     if (!g_idle_ok)
         return;
-    // Logged only on failure: this runs for the whole lifetime of the console.
+    // Logged on the first ping (so the log shows keep-awake actually running)
+    // and on failure only: this runs for the whole lifetime of the console.
+    static bool logged_first;
     Result rc = idlesysReportUserIsActive();
-    if (R_FAILED(rc))
+    if (R_FAILED(rc)) {
         LOGF("power: idlesysReportUserIsActive failed rc=0x%x\n", rc);
+    } else if (!logged_first) {
+        logged_first = true;
+        LOGF("power: keep-awake active (idle counter reset)\n");
+    }
 }
 
 #else // host (tests): no PSC / spsm / idle:sys

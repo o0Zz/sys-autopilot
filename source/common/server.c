@@ -19,6 +19,11 @@
 #include <arpa/inet.h>
 #include <switch.h>
 
+// Keep-awake ping period. Must stay comfortably under the ~10s idle policy the
+// lock screen applies, which is far shorter than any auto-sleep plan exposed in
+// System Settings. One idle:sys IPC per period is negligible.
+#define KEEPAWAKE_INTERVAL_NS (5ULL * 1000000000ULL)
+
 static bool set_nonblocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0)
@@ -180,9 +185,12 @@ void server_run(const Config *cfg, ServerIdleCb idle) {
     // missed entirely). The loop spins ~every 100ms; check every ~2s.
     int netcheck_ticks = 0;
 
-    // Same throttle for the keep-awake ping. 30s is well inside the shortest
-    // auto-sleep plan the console offers (1 minute).
-    int keepawake_ticks = 0;
+    // Keep-awake ping deadline. Measured on the system tick rather than loop
+    // iterations: an iteration is ~100ms only when poll() times out, and
+    // stretches to seconds while a request is served or a failed bind is
+    // retried, so a tick count is not a clock. 0 means "ping now", so the
+    // first ping goes out before the console has had time to idle out.
+    u64 keepawake_next = 0;
 
     // Let the http I/O layer drive the idle callback during transfers too.
     http_set_idle_callback(idle);
@@ -220,6 +228,9 @@ void server_run(const Config *cfg, ServerIdleCb idle) {
             // Safe to touch the SD card again now that we are awake.
             log_set_suspended(false);
             LOGF("server: power: awake\n");
+            // Wake lands back on the lock screen and its short idle policy
+            // starts running immediately: ping on the very next iteration.
+            keepawake_next = 0;
         }
         if (suspended) {
             if (idle && !idle())
@@ -232,9 +243,18 @@ void server_run(const Config *cfg, ServerIdleCb idle) {
         // console then answers nothing until someone physically presses a
         // button. Runs only while awake, so the ping never lands inside the
         // sleep window.
-        if (cfg->keep_awake && ++keepawake_ticks >= 300) { // ~30s
-            keepawake_ticks = 0;
-            power_keepawake_tick();
+        //
+        // The interval has to beat the SHORTEST idle policy the system applies,
+        // not the shortest auto-sleep plan in System Settings (1 minute): the
+        // lock screen ("press A three times", shown after boot and after every
+        // wake) runs its own ~10s policy, so a 30s ping never landed inside it
+        // and the console dropped straight back to sleep.
+        if (cfg->keep_awake) {
+            u64 now = armGetSystemTick();
+            if (now >= keepawake_next) {
+                keepawake_next = now + armNsToTicks(KEEPAWAKE_INTERVAL_NS);
+                power_keepawake_tick();
+            }
         }
 
         // React to network connectivity changes (wifi connect/disconnect,
