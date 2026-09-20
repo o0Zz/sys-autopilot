@@ -55,6 +55,7 @@ int main(void) {
     assert(strstr(body, "'/files?path='"));
     assert(strstr(body, "method: 'PUT'"));
     assert(strstr(body, "method: 'DELETE'"));
+    assert(strstr(body, "'/move'"));
 
     // 2. The bare address redirects to the explorer.
     capture(explorer_handle_root, "console:4150");

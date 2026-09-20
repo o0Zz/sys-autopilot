@@ -43,6 +43,7 @@
       <label><input type="checkbox" id="live"> live</label>
       <button id="save" disabled>Save</button>
       <a id="dl" download>Download</a>
+      <button id="ren" disabled>Rename</button>
       <button id="del" disabled>Delete</button>
     </div>
     <textarea id="ed" spellcheck="false"></textarea>
@@ -50,7 +51,8 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
-const api = (p, o) => fetch('/files?path=' + encodeURIComponent(p), o);
+const api = (p, o, move) => fetch('/files' + (move ? '/move' : '') + '?path=' +
+                                  encodeURIComponent(p) + (move || ''), o);
 const human = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' K'
                  : (n / 1048576).toFixed(1) + ' M';
 let dir = '/', file = null, dirty = false;
@@ -60,8 +62,8 @@ function say(text, keep) {
   if (!keep) setTimeout(() => { if ($('msg').textContent === text) $('msg').textContent = ''; }, 3000);
 }
 
-async function call(path, opts, what) {
-  const r = await api(path, opts);
+async function call(path, opts, what, move) {
+  const r = await api(path, opts, move);
   if (r.status === 401) {
     // The page itself loaded, so the browser had credentials a moment ago:
     // reloading re-runs the navigation and lets it prompt again.
@@ -119,7 +121,7 @@ async function openFile(path, li) {
   $('name').textContent = path;
   $('dl').href = '/files?path=' + encodeURIComponent(path);
   $('dl').download = path.split('/').pop();
-  $('del').disabled = false;
+  $('del').disabled = $('ren').disabled = false;
   await reload();
 }
 
@@ -153,8 +155,23 @@ $('del').onclick = async () => {
   dirty = false;
   $('ed').value = '';
   $('name').textContent = 'no file';
-  $('del').disabled = true;
+  $('del').disabled = $('ren').disabled = true;
   loadDir(dir);
+};
+
+$('ren').onclick = async () => {
+  // Edit the name to rename, or the directory part to move.
+  const to = prompt('Rename / move to:', file);
+  if (!to || to === file) return;
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  await call(file, { method: 'POST' }, 'rename', '&to=' + encodeURIComponent(to));
+  say('moved to ' + to);
+  file = null;
+  dirty = false;
+  $('ed').value = '';
+  $('name').textContent = 'no file';
+  $('del').disabled = $('ren').disabled = true;
+  loadDir(to.replace(/[^/]*$/, ''));
 };
 
 $('up').onchange = async e => {

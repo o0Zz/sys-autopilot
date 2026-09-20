@@ -686,6 +686,7 @@ static const Route kRoutes[] = {
     { "GET",    "/files/hash",        files_handle_hash },
     { "PUT",    "/files",             files_handle_put },
     { "DELETE", "/files",             files_handle_delete },
+    { "POST",   "/files/move",        files_handle_move },
     { "GET",    "/titles",            handle_titles },
     { "GET",    "/process",           handle_process_status },
     { "POST",   "/process/start",     handle_process_start },

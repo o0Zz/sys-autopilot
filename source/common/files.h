@@ -11,6 +11,7 @@
 void files_handle_get(HttpRequest *req);    // file download or directory listing
 void files_handle_put(HttpRequest *req);    // upload (streamed write)
 void files_handle_delete(HttpRequest *req); // remove file or empty directory
+void files_handle_move(HttpRequest *req);   // rename / move a file or directory
 void files_handle_hash(HttpRequest *req);   // SHA-256 of a file (JSON)
 
 // --- Shared helpers (also used by the MCP tools) -----------------------------
@@ -29,6 +30,11 @@ char *files_build_listing(const char *fspath, const char *userpath,
 
 // Deletes a file or empty directory. Returns true on success, *err on failure.
 bool files_delete_path(const char *fspath, const char **err);
+
+// Renames/moves a file or directory (creating dst's parent directories).
+// Refuses to overwrite an existing destination. Returns true on success,
+// *err on failure.
+bool files_move_path(const char *src, const char *dst, const char **err);
 
 // Computes the SHA-256 of a regular file, streamed in fixed-size chunks (so
 // memory use is constant regardless of file size). On success writes a 64-char

@@ -235,7 +235,8 @@ http://<ip>:4150/          -> redirects to /explorer
 ```
 
 Browse the SD card, open a text file and edit it in place (Save writes it
-back), upload by drag-and-drop, download, delete. The **live** checkbox
+back), upload by drag-and-drop, download, rename or move (edit the path in
+the prompt), delete. The **live** checkbox
 re-reads the open file every 2s and keeps the view pinned to the end, which
 makes it a log tail. The page is the same origin as the API, so it just calls
 `/files` directly.
@@ -301,6 +302,7 @@ GET    /files/hash?path=/switch/myapp.nro          SHA-256 digest (JSON)
 GET    /files?path=/switch/                       directory listing (JSON)
 PUT    /files?path=/switch/myapp.nro              upload (raw request body)
 DELETE /files?path=/switch/myapp.nro              delete file / empty dir
+POST   /files/move?path=/switch/a.nro&to=/switch/b.nro   rename / move (never overwrites)
 ```
 
 ```sh

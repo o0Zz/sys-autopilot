@@ -194,6 +194,26 @@ bool files_delete_path(const char *fspath, const char **err) {
     return true;
 }
 
+bool files_move_path(const char *src, const char *dst, const char **err) {
+    struct stat st;
+    if (stat(src, &st) != 0) {
+        *err = "no such file or directory";
+        return false;
+    }
+    if (strcmp(src, dst) == 0)
+        return true;
+    if (stat(dst, &st) == 0) {
+        *err = "destination already exists";
+        return false;
+    }
+    files_mkdirs_for(dst);
+    if (rename(src, dst) != 0) {
+        *err = "move failed";
+        return false;
+    }
+    return true;
+}
+
 bool files_hash_sha256(const char *fspath, char out_hex[65], long long *out_size,
                        const char **err) {
     struct stat st;
@@ -406,4 +426,30 @@ void files_handle_delete(HttpRequest *req) {
         return;
     }
     http_send_json(req->fd, 200, "{\"deleted\":\"%s\"}", fspath + strlen(FILES_ROOT));
+}
+
+void files_handle_move(HttpRequest *req) {
+    char src[768];
+    if (!resolve_query_path(req, src, sizeof(src)))
+        return;
+
+    char to[512];
+    if (!http_query_get(req, "to", to, sizeof(to)) || to[0] == '\0') {
+        http_send_error(req->fd, 400, "missing 'to' query parameter");
+        return;
+    }
+    char dst[768];
+    const char *err = NULL;
+    if (!files_resolve(to, dst, sizeof(dst), &err)) {
+        http_send_error(req->fd, 400, err);
+        return;
+    }
+    if (!files_move_path(src, dst, &err)) {
+        int code = strstr(err, "no such") ? 404 : strstr(err, "exists") ? 409 : 500;
+        http_send_error(req->fd, code, err);
+        return;
+    }
+    LOGF("files: moved %s -> %s\n", src, dst);
+    http_send_json(req->fd, 200, "{\"moved\":\"%s\",\"to\":\"%s\"}",
+                   src + strlen(FILES_ROOT), dst + strlen(FILES_ROOT));
 }

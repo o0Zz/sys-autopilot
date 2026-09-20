@@ -11,6 +11,7 @@
 #include "base64.h"
 #include "buttons.h"
 #include "config.h"
+#include "files.h"
 #include "http.h"
 #include "mcp.h"
 #include "oauth.h"
@@ -208,6 +209,77 @@ static void test_upload_and_files(void) {
                "\"params\":{\"name\":\"read_file\",\"arguments\":{\"path\":\"/../etc/passwd\"}}}");
     assert(strstr(r, "\"isError\":true"));
     printf("upload/files ok\n");
+}
+
+// Issues one request against a /files handler; returns the raw HTTP response.
+static const char *do_files(const char *method, const char *target,
+                            void (*handler)(HttpRequest *)) {
+    static char resp[4096];
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    char req[1024];
+    int rn = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\n\r\n", method, target);
+    assert(rn > 0 && write(sv[1], req, (size_t)rn) == rn);
+    shutdown(sv[1], SHUT_WR);
+
+    static HttpRequest hreq;
+    assert(http_read_request(sv[0], &hreq));
+    handler(&hreq);
+    close(sv[0]);
+
+    size_t total = 0;
+    ssize_t n;
+    while ((n = read(sv[1], resp + total, sizeof(resp) - 1 - total)) > 0)
+        total += (size_t)n;
+    resp[total] = '\0';
+    close(sv[1]);
+    return resp;
+}
+
+static void test_move_file(void) {
+    system("rm -rf " FAKE_SD " && mkdir -p " FAKE_SD "/mv");
+    FILE *f = fopen(FAKE_SD "/mv/a.txt", "wb");
+    assert(f && fputs("abc", f) >= 0);
+    fclose(f);
+    f = fopen(FAKE_SD "/mv/taken.txt", "wb");
+    assert(f);
+    fclose(f);
+    struct stat st;
+
+    // Rename within the same directory.
+    const char *r = do_files("POST", "/files/move?path=/mv/a.txt&to=/mv/b.txt",
+                             files_handle_move);
+    assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
+    assert(strstr(r, "\"moved\":\"/mv/a.txt\",\"to\":\"/mv/b.txt\""));
+    assert(stat(FAKE_SD "/mv/a.txt", &st) != 0);
+    assert(stat(FAKE_SD "/mv/b.txt", &st) == 0 && st.st_size == 3);
+
+    // Move into a directory that does not exist yet: parents are created.
+    r = do_files("POST", "/files/move?path=/mv/b.txt&to=/mv/sub/deep/c.txt",
+                 files_handle_move);
+    assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/sub/deep/c.txt", &st) == 0);
+
+    // Directories move too.
+    r = do_files("POST", "/files/move?path=/mv/sub&to=/mv/renamed", files_handle_move);
+    assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/renamed/deep/c.txt", &st) == 0);
+
+    // Never overwrites an existing destination.
+    r = do_files("POST", "/files/move?path=/mv/renamed/deep/c.txt&to=/mv/taken.txt",
+                 files_handle_move);
+    assert(strncmp(r, "HTTP/1.1 409 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/renamed/deep/c.txt", &st) == 0);
+
+    // Missing source, missing 'to', and traversal in 'to'.
+    r = do_files("POST", "/files/move?path=/mv/nope&to=/mv/x", files_handle_move);
+    assert(strncmp(r, "HTTP/1.1 404 ", 13) == 0);
+    r = do_files("POST", "/files/move?path=/mv/taken.txt", files_handle_move);
+    assert(strncmp(r, "HTTP/1.1 400 ", 13) == 0);
+    r = do_files("POST", "/files/move?path=/mv/taken.txt&to=/../escape", files_handle_move);
+    assert(strncmp(r, "HTTP/1.1 400 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/taken.txt", &st) == 0);
+    printf("move ok\n");
 }
 
 static void test_hash_file(void) {
@@ -439,6 +511,7 @@ int main(void) {
     test_tap_sequence();
     test_screenshot();
     test_upload_and_files();
+    test_move_file();
     test_hash_file();
     test_input_with_screenshot();
     test_create_token();
