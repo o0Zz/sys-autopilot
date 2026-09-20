@@ -55,7 +55,23 @@ const api = (p, o, move) => fetch('/files' + (move ? '/move' : '') + '?path=' +
                                   encodeURIComponent(p) + (move || ''), o);
 const human = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' K'
                  : (n / 1048576).toFixed(1) + ' M';
-let dir = '/', file = null, dirty = false;
+let dir = '/', file = null, dirty = false, ourHash = null;
+
+// The location hash mirrors where we are, so F5 / Ctrl+R (and back/forward)
+// come back to the same directory and file instead of jumping to the root.
+function syncHash() {
+  const want = '#' + encodeURI(dir) + (file ? '?file=' + encodeURIComponent(file) : '');
+  ourHash = want;
+  if (location.hash !== want) location.hash = want;
+}
+
+function parseHash() {
+  const raw = location.hash.slice(1);
+  const cut = raw.indexOf('?file=');
+  const at = decodeURI(cut < 0 ? raw : raw.slice(0, cut)) || '/';
+  return [at.startsWith('/') ? at : '/' + at,
+          cut < 0 ? null : decodeURIComponent(raw.slice(cut + 6))];
+}
 
 function say(text, keep) {
   $('msg').textContent = text;
@@ -108,16 +124,21 @@ async function loadDir(path) {
     size.className = 'size';
     size.textContent = e.type === 'dir' ? '' : human(e.size);
     li.append(label, size);
+    li.dataset.path = target;
+    if (target === file) li.classList.add('sel');
     li.onclick = () => e.type === 'dir' ? loadDir(target) : openFile(target, li);
     $('list').append(li);
   }
+  syncHash();
 }
 
 async function openFile(path, li) {
   if (dirty && !confirm('Discard unsaved changes?')) return;
+  li = li || [...$('list').children].find(n => n.dataset.path === path);
   [...$('list').children].forEach(n => n.classList.toggle('sel', n === li));
   file = path;
   dirty = false;
+  syncHash();
   $('name').textContent = path;
   $('dl').href = '/files?path=' + encodeURIComponent(path);
   $('dl').download = path.split('/').pop();
@@ -194,5 +215,33 @@ document.ondrop = e => {
 };
 
 setInterval(() => { if ($('live').checked && file && !dirty) reload(); }, 2000);
-loadDir('/');
+
+window.onhashchange = () => {
+  if (location.hash === ourHash) return;  // our own syncHash, nothing to restore
+  restore();
+};
+
+// Restore the hash location; fall back to the root if it is gone (deleted or
+// renamed since the link was made).
+async function restore() {
+  const [at, want] = parseHash();
+  try {
+    await loadDir(at);
+  } catch (e) {
+    say('cannot open ' + at + ' - back to /');
+    file = null;
+    return loadDir('/');
+  }
+  if (!want) return;
+  await openFile(want, null).catch(() => {
+    say('cannot open ' + want);
+    file = null;
+    $('ed').value = '';
+    $('name').textContent = 'no file';
+    $('del').disabled = $('ren').disabled = true;
+    syncHash();
+  });
+}
+
+restore();
 </script>
