@@ -1,9 +1,11 @@
-// Host unit tests for the pure-logic modules: base64, json, jstream, buttons.
+// Host unit tests for the pure-logic modules: base64, json, jstream, buttons,
+// apiargs.
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "apiargs.h"
 #include "base64.h"
 #include "buttons.h"
 #include "json.h"
@@ -282,12 +284,77 @@ static void test_sha256(void) {
     printf("sha256 ok\n");
 }
 
+// --- apiargs (touch) ----------------------------------------------------------
+
+static int parse(JsonDoc *doc, const char *src) {
+    assert(json_parse(doc, src, strlen(src)) == 0);
+    return 0; // root token
+}
+
+static void test_args_touch(void) {
+    static JsonDoc doc;
+    int x, y, ms;
+    const char *err = NULL;
+
+    int root = parse(&doc, "{\"x\":640,\"y\":360,\"durationMs\":250}");
+    assert(args_get_touch(&doc, root, &x, &y, &ms, &err));
+    assert(x == 640 && y == 360 && ms == 250);
+
+    // durationMs is optional; 0 means "use the default" downstream.
+    root = parse(&doc, "{\"x\":0,\"y\":0}");
+    assert(args_get_touch(&doc, root, &x, &y, &ms, &err));
+    assert(x == 0 && y == 0 && ms == 0);
+
+    // Corners are valid, one past them is not.
+    root = parse(&doc, "{\"x\":1279,\"y\":719}");
+    assert(args_get_touch(&doc, root, &x, &y, &ms, &err));
+    root = parse(&doc, "{\"x\":1280,\"y\":719}");
+    assert(!args_get_touch(&doc, root, &x, &y, &ms, &err));
+    assert(strstr(err, "'x'") && strstr(err, "1279"));
+    root = parse(&doc, "{\"x\":0,\"y\":720}");
+    assert(!args_get_touch(&doc, root, &x, &y, &ms, &err));
+    assert(strstr(err, "'y'") && strstr(err, "719"));
+
+    // Negative, missing and non-numeric all rejected.
+    root = parse(&doc, "{\"x\":-1,\"y\":0}");
+    assert(!args_get_touch(&doc, root, &x, &y, &ms, &err));
+    root = parse(&doc, "{\"y\":0}");
+    assert(!args_get_touch(&doc, root, &x, &y, &ms, &err));
+    root = parse(&doc, "{\"x\":\"640\",\"y\":0}");
+    assert(!args_get_touch(&doc, root, &x, &y, &ms, &err));
+
+    printf("apiargs touch ok\n");
+}
+
+static void test_args_swipe(void) {
+    static JsonDoc doc;
+    int x0, y0, x1, y1, ms;
+    const char *err = NULL;
+
+    int root = parse(&doc, "{\"fromX\":100,\"fromY\":600,\"toX\":100,\"toY\":120,"
+                           "\"durationMs\":400}");
+    assert(args_get_swipe(&doc, root, &x0, &y0, &x1, &y1, &ms, &err));
+    assert(x0 == 100 && y0 == 600 && x1 == 100 && y1 == 120 && ms == 400);
+
+    // Each endpoint is validated, and the message names the offending key.
+    root = parse(&doc, "{\"fromX\":100,\"fromY\":600,\"toX\":100}");
+    assert(!args_get_swipe(&doc, root, &x0, &y0, &x1, &y1, &ms, &err));
+    assert(strstr(err, "'toY'"));
+    root = parse(&doc, "{\"fromX\":100,\"fromY\":600,\"toX\":5000,\"toY\":0}");
+    assert(!args_get_swipe(&doc, root, &x0, &y0, &x1, &y1, &ms, &err));
+    assert(strstr(err, "'toX'"));
+
+    printf("apiargs swipe ok\n");
+}
+
 int main(void) {
     test_base64();
     test_json();
     test_jstream();
     test_buttons();
     test_sha256();
+    test_args_touch();
+    test_args_swipe();
     printf("all core tests passed\n");
     return 0;
 }

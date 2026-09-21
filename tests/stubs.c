@@ -13,6 +13,9 @@ int stub_tap_duration;
 int stub_tap_count;
 u64 stub_hold_mask;
 int stub_stick_side;
+int stub_touch_x, stub_touch_y, stub_touch_duration;
+int stub_swipe_from_x, stub_swipe_from_y, stub_swipe_to_x, stub_swipe_to_y;
+int stub_touch_count;
 float stub_stick_x, stub_stick_y;
 bool stub_cleared;
 
@@ -38,6 +41,25 @@ Result input_stick(int side, float x, float y, int duration_ms) {
     stub_stick_side = side;
     stub_stick_x = x;
     stub_stick_y = y;
+    return 0;
+}
+
+Result input_touch_tap(int x, int y, int duration_ms) {
+    stub_touch_x = x;
+    stub_touch_y = y;
+    stub_touch_duration = duration_ms;
+    stub_touch_count++;
+    return 0;
+}
+
+Result input_touch_swipe(int from_x, int from_y, int to_x, int to_y,
+                         int duration_ms) {
+    stub_swipe_from_x = from_x;
+    stub_swipe_from_y = from_y;
+    stub_swipe_to_x = to_x;
+    stub_swipe_to_y = to_y;
+    stub_touch_duration = duration_ms;
+    stub_touch_count++;
     return 0;
 }
 

@@ -33,7 +33,10 @@ void http_set_keep_alive(bool on) {
 }
 
 static const char *conn_hdr(void) {
-    return g_keep_alive ? "Connection: keep-alive\r\nKeep-Alive: timeout=10\r\n"
+    // timeout=1, not the 10 we used to claim: the server only holds an idle
+    // connection for a moment (see handle_connection), and a client that trusts
+    // a longer promise puts its next request on a socket we already closed.
+    return g_keep_alive ? "Connection: keep-alive\r\nKeep-Alive: timeout=1\r\n"
                         : "Connection: close\r\n";
 }
 

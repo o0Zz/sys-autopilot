@@ -363,6 +363,29 @@ static void tool_set_stick(HttpRequest *req, const char *id, const JsonDoc *doc,
                                      "ok", doc, args);
 }
 
+static void tool_tap_screen(HttpRequest *req, const char *id, const JsonDoc *doc, int args) {
+    int x, y, duration;
+    const char *err = NULL;
+    if (!args_get_touch(doc, args, &x, &y, &duration, &err)) {
+        send_tool_error(req->fd, id, err);
+        return;
+    }
+    send_input_result_opt_screenshot(req, id, input_touch_tap(x, y, duration),
+                                     "ok", doc, args);
+}
+
+static void tool_swipe_screen(HttpRequest *req, const char *id, const JsonDoc *doc, int args) {
+    int x0, y0, x1, y1, duration;
+    const char *err = NULL;
+    if (!args_get_swipe(doc, args, &x0, &y0, &x1, &y1, &duration, &err)) {
+        send_tool_error(req->fd, id, err);
+        return;
+    }
+    send_input_result_opt_screenshot(req, id,
+                                     input_touch_swipe(x0, y0, x1, y1, duration),
+                                     "ok", doc, args);
+}
+
 static void tool_status(HttpRequest *req, const char *id) {
     u32 ver = hosversionGet();
     char text[256];
@@ -1052,6 +1075,8 @@ static void handle_tools_call(HttpRequest *req, const char *id, const JsonDoc *d
     else if (strcmp(name, "hold_buttons") == 0)     tool_hold_release(req, id, doc, args, true);
     else if (strcmp(name, "release_buttons") == 0)  tool_hold_release(req, id, doc, args, false);
     else if (strcmp(name, "set_stick") == 0)        tool_set_stick(req, id, doc, args);
+    else if (strcmp(name, "tap_screen") == 0)       tool_tap_screen(req, id, doc, args);
+    else if (strcmp(name, "swipe_screen") == 0)     tool_swipe_screen(req, id, doc, args);
     else if (strcmp(name, "clear_input") == 0)
         send_input_result_opt_screenshot(req, id, input_clear(), "ok", doc, args);
     else if (strcmp(name, "status") == 0)           tool_status(req, id);

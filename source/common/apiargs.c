@@ -1,6 +1,7 @@
 #include "apiargs.h"
 #include "buttons.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <strings.h>
 
@@ -70,6 +71,45 @@ bool args_get_stick(const JsonDoc *doc, int obj, int *out_side, float *out_x,
     }
     *out_x = (float)x;
     *out_y = (float)y;
+    *out_duration = args_get_duration(doc, obj, 0);
+    return true;
+}
+
+// Single-threaded server, like the static JsonDoc the callers pass in: the
+// message only has to survive until the response is written.
+static char g_touch_err[64];
+
+static bool get_coord(const JsonDoc *doc, int obj, const char *key, int max,
+                      int *out, const char **err) {
+    long long v;
+    int tok = json_obj_get(doc, obj, key);
+    if (tok < 0 || !json_get_int(doc, tok, &v) || v < 0 || v > max) {
+        snprintf(g_touch_err, sizeof(g_touch_err),
+                 "'%s' must be an integer 0..%d", key, max);
+        *err = g_touch_err;
+        return false;
+    }
+    *out = (int)v;
+    return true;
+}
+
+bool args_get_touch(const JsonDoc *doc, int obj, int *out_x, int *out_y,
+                    int *out_duration, const char **err) {
+    if (!get_coord(doc, obj, "x", ARGS_TOUCH_MAX_X, out_x, err) ||
+        !get_coord(doc, obj, "y", ARGS_TOUCH_MAX_Y, out_y, err))
+        return false;
+    *out_duration = args_get_duration(doc, obj, 0);
+    return true;
+}
+
+bool args_get_swipe(const JsonDoc *doc, int obj, int *out_from_x, int *out_from_y,
+                    int *out_to_x, int *out_to_y, int *out_duration,
+                    const char **err) {
+    if (!get_coord(doc, obj, "fromX", ARGS_TOUCH_MAX_X, out_from_x, err) ||
+        !get_coord(doc, obj, "fromY", ARGS_TOUCH_MAX_Y, out_from_y, err) ||
+        !get_coord(doc, obj, "toX", ARGS_TOUCH_MAX_X, out_to_x, err) ||
+        !get_coord(doc, obj, "toY", ARGS_TOUCH_MAX_Y, out_to_y, err))
+        return false;
     *out_duration = args_get_duration(doc, obj, 0);
     return true;
 }

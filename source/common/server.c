@@ -123,6 +123,32 @@ static ConnDisp handle_one(int fd, const Config *cfg) {
     return (req.keep_alive && drain_body(&req)) ? CONN_KEEP : CONN_CLOSE;
 }
 
+// Closes a client connection without ever emitting an RST.
+//
+// close() on a socket that still has unread bytes queued resets the connection
+// instead of finishing the handshake, and a keep-alive socket hits that easily:
+// the peer can put a request on the wire in the moment between our decision to
+// close and the close itself. It then reports a connection reset (browsers show
+// this on reload, reusing a pooled socket) instead of seeing a clean end of
+// connection, which they retry silently. So: half-close to push the FIN out,
+// then read and discard whatever is still in flight until the peer's own FIN
+// comes back or the grace period lapses.
+static void close_client(int fd) {
+    shutdown(fd, SHUT_WR);
+    for (int waited = 0; waited < 50; waited += 10) {
+        struct pollfd p = { .fd = fd, .events = POLLIN, .revents = 0 };
+        if (poll(&p, 1, 10) <= 0)
+            continue; // timeout or EINTR: wait out the rest of the grace period
+        char scratch[512];
+        ssize_t n = recv(fd, scratch, sizeof(scratch), 0);
+        if (n == 0) // peer's FIN: both directions are done
+            break;
+        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            break;
+    }
+    close(fd);
+}
+
 // Serves an accepted connection (one or more keep-alive requests).
 static void handle_connection(int fd, const Config *cfg) {
     // Non-blocking I/O: the http layer waits via poll() with an inactivity
@@ -371,10 +397,7 @@ void server_run(const Config *cfg, ServerIdleCb idle) {
         }
 
         handle_connection(client, cfg);
-        // Half-close the write side first so the peer reliably sees a FIN
-        // (not an RST from leftover unread bytes), then close.
-        shutdown(client, SHUT_WR);
-        close(client);
+        close_client(client);
 
         // Agent-requested power action: executed only after the response has
         // been sent and the connection closed, so the client gets its

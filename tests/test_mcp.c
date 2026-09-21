@@ -21,6 +21,9 @@
 extern uint64_t stub_tap_mask;
 extern int stub_tap_duration;
 extern int stub_tap_count;
+extern int stub_touch_x, stub_touch_y, stub_touch_duration;
+extern int stub_swipe_from_x, stub_swipe_from_y, stub_swipe_to_x, stub_swipe_to_y;
+extern int stub_touch_count;
 
 // Issues one POST /mcp request with the given JSON body; returns the raw HTTP
 // response in a static buffer.
@@ -95,6 +98,8 @@ static void test_ping_and_errors(void) {
 static void test_tools_list(void) {
     const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\"}");
     assert(strstr(r, "\"tap_buttons\""));
+    assert(strstr(r, "\"tap_screen\""));
+    assert(strstr(r, "\"swipe_screen\""));
     assert(strstr(r, "\"upload_file\""));
     assert(strstr(r, "\"hash_file\""));
     assert(strstr(r, "\"screenshot\""));
@@ -497,6 +502,38 @@ static void test_process_tools(void) {
     printf("process tools ok\n");
 }
 
+static void test_touch_tools(void) {
+    stub_touch_count = 0;
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":30,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"tap_screen\",\"arguments\":"
+                           "{\"x\":640,\"y\":360,\"durationMs\":40}}}");
+    assert(strstr(r, "\"isError\":false"));
+    assert(stub_touch_count == 1);
+    assert(stub_touch_x == 640 && stub_touch_y == 360 && stub_touch_duration == 40);
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"swipe_screen\",\"arguments\":"
+               "{\"fromX\":200,\"fromY\":600,\"toX\":200,\"toY\":100}}}");
+    assert(strstr(r, "\"isError\":false"));
+    assert(stub_touch_count == 2);
+    assert(stub_swipe_from_x == 200 && stub_swipe_from_y == 600);
+    assert(stub_swipe_to_x == 200 && stub_swipe_to_y == 100);
+
+    // Off-panel coordinates are refused before reaching the console.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":32,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"tap_screen\",\"arguments\":{\"x\":1280,\"y\":0}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(strstr(r, "1279"));
+    assert(stub_touch_count == 2);
+
+    // Missing coordinates too.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":33,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"swipe_screen\",\"arguments\":{\"fromX\":0,\"fromY\":0}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(stub_touch_count == 2);
+    printf("touch tools ok\n");
+}
+
 static Config g_cfg_for_oauth;
 
 int main(void) {
@@ -517,6 +554,7 @@ int main(void) {
     test_create_token();
     test_power_tools();
     test_process_tools();
+    test_touch_tools();
     printf("all mcp tests passed\n");
     return 0;
 }

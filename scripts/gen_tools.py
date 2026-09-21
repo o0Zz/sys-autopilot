@@ -93,6 +93,38 @@ tools = [
         }, "required": ["side"]},
     },
     {
+        "name": "tap_screen",
+        "description": ("Tap the touch screen at a pixel coordinate. Coordinates are in the "
+                        "same 1280x720 space as the screenshot tool, so you can read them "
+                        "straight off the image: x 0-1279 left to right, y 0-719 top to "
+                        "bottom. Only reaches the console in handheld mode (docked, the "
+                        "panel is off)."),
+        "inputSchema": {"type": "object", "properties": {
+            "x": {"type": "integer", "description": "0-1279, from the left edge."},
+            "y": {"type": "integer", "description": "0-719, from the top edge."},
+            "durationMs": {"type": "integer",
+                           "description": "How long the finger stays down. Default 100, "
+                                          "min 32, max 10000. Raise it for a long press."},
+            **screenshot_props(),
+        }, "required": ["x", "y"]},
+    },
+    {
+        "name": "swipe_screen",
+        "description": ("Drag a finger across the touch screen, e.g. to scroll a list or "
+                        "flick a page. Same 1280x720 coordinate space as the screenshot "
+                        "tool. The gesture is interpolated over durationMs, which is what "
+                        "makes scrolling register - a fast swipe flicks, a slow one drags."),
+        "inputSchema": {"type": "object", "properties": {
+            "fromX": {"type": "integer", "description": "Start x, 0-1279."},
+            "fromY": {"type": "integer", "description": "Start y, 0-719."},
+            "toX": {"type": "integer", "description": "End x, 0-1279."},
+            "toY": {"type": "integer", "description": "End y, 0-719."},
+            "durationMs": {"type": "integer",
+                           "description": "Time from start to end. Default 300, max 10000."},
+            **screenshot_props(),
+        }, "required": ["fromX", "fromY", "toX", "toY"]},
+    },
+    {
         "name": "clear_input",
         "description": "Release all held buttons and recenter both sticks.",
         "inputSchema": {"type": "object", "properties": {**screenshot_props()}},

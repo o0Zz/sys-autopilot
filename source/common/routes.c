@@ -15,6 +15,7 @@
 #include "settings.h"
 #include "log.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -139,6 +140,39 @@ static void handle_input_hold_release(HttpRequest *req, bool hold) {
 
 static void handle_input_hold(HttpRequest *req)    { handle_input_hold_release(req, true); }
 static void handle_input_release(HttpRequest *req) { handle_input_hold_release(req, false); }
+
+// apiargs.h stays host-testable (no libnx), so it carries its own copy of
+// the panel bounds; keep the two in step.
+static_assert(ARGS_TOUCH_MAX_X == INPUT_TOUCH_WIDTH - 1, "touch width drift");
+static_assert(ARGS_TOUCH_MAX_Y == INPUT_TOUCH_HEIGHT - 1, "touch height drift");
+
+static void handle_input_touch(HttpRequest *req) {
+    static JsonDoc doc;
+    int root = read_json_body(req, &doc);
+    if (root < 0)
+        return;
+    int x, y, duration;
+    const char *err = NULL;
+    if (!args_get_touch(&doc, root, &x, &y, &duration, &err)) {
+        http_send_error(req->fd, 400, err);
+        return;
+    }
+    send_input_result(req, input_touch_tap(x, y, duration));
+}
+
+static void handle_input_swipe(HttpRequest *req) {
+    static JsonDoc doc;
+    int root = read_json_body(req, &doc);
+    if (root < 0)
+        return;
+    int x0, y0, x1, y1, duration;
+    const char *err = NULL;
+    if (!args_get_swipe(&doc, root, &x0, &y0, &x1, &y1, &duration, &err)) {
+        http_send_error(req->fd, 400, err);
+        return;
+    }
+    send_input_result(req, input_touch_swipe(x0, y0, x1, y1, duration));
+}
 
 static void handle_input_stick(HttpRequest *req) {
     static JsonDoc doc;
@@ -679,6 +713,8 @@ static const Route kRoutes[] = {
     { "POST",   "/input/hold",        handle_input_hold },
     { "POST",   "/input/release",     handle_input_release },
     { "POST",   "/input/stick",       handle_input_stick },
+    { "POST",   "/input/touch",       handle_input_touch },
+    { "POST",   "/input/swipe",       handle_input_swipe },
     { "POST",   "/input/clear",       handle_input_clear },
     { "POST",   "/controller/attach", handle_controller_attach },
     { "POST",   "/controller/detach", handle_controller_detach },

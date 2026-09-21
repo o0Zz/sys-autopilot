@@ -200,6 +200,8 @@ Details:
 | `tap_sequence` | Up to 32 taps in one call (menu navigation without round-trips) |
 | `hold_buttons` / `release_buttons` | Persistent button state |
 | `set_stick` | Analog stick (`side`, `x`/`y` in -1..1, optional `durationMs`) |
+| `tap_screen` | Tap the touch screen at a pixel coordinate (same 1280x720 space as the screenshot) |
+| `swipe_screen` | Drag across the touch screen (`fromX/fromY` to `toX/toY`, `durationMs`) |
 | `clear_input` | Release everything, recenter sticks |
 | `status` | Server version, firmware, controller state, uptime, battery % / charging |
 | `list_directory` | JSON listing of an SD card directory |
@@ -290,6 +292,34 @@ curl -X POST http://<ip>:4150/input/tap \
      -H 'Content-Type: application/json' \
      -d '{"buttons":["RIGHT"]}'
 ```
+
+### Touch screen
+
+Injected through `hiddbg`, independently of the virtual controller: no
+attach, and a physical controller can stay connected. Coordinates are pixels
+in the panel's 1280x720 space, which is exactly the space of the JPEG
+`/screenshot` returns — read a target off the screenshot and tap it.
+
+```
+POST /input/touch    {"x":640,"y":360,"durationMs":100}
+POST /input/swipe    {"fromX":200,"fromY":600,"toX":200,"toY":100,"durationMs":300}
+```
+
+Both are synchronous: the gesture is driven frame by frame (~60Hz) for
+`durationMs`, and the panel is handed back to the player before the response.
+`durationMs` defaults to 100 (tap) / 300 (swipe), with a 32ms floor and the
+usual 10s cap. Out-of-range coordinates are rejected with 400.
+
+```sh
+# scroll a list by flicking up from the bottom of the screen
+curl -X POST http://<ip>:4150/input/swipe \
+     -H 'Content-Type: application/json' \
+     -d '{"fromX":640,"fromY":600,"toX":640,"toY":150,"durationMs":250}'
+```
+
+The panel is only live in handheld mode — docked, the console ignores touch
+entirely (just as it ignores a finger), so this is no substitute for the
+controller endpoints.
 
 ### Files
 
@@ -572,4 +602,6 @@ GitHub Release with the SD-card zip and dev `.nro` attached.
 - MCP transport details: stateless (no session IDs), plain JSON responses (no
   SSE), `GET /mcp` returns 405, JSON-RPC batching unsupported (removed in MCP
   2025-06-18 anyway).
+- Touch input only reaches applications in handheld mode; docked, the panel
+  is off, so `/input/touch` succeeds while nothing happens on screen.
 - No TLS; treat the API as LAN-trusted.

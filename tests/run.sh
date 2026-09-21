@@ -23,7 +23,8 @@ cc $CFLAGS -o "$OUT/test_explorer" test_explorer.c \
 
 echo "== test_core =="
 cc $CFLAGS -o "$OUT/test_core" test_core.c \
-    "$SRC/base64.c" "$SRC/buttons.c" "$SRC/json.c" "$SRC/jstream.c" "$SRC/sha256.c"
+    "$SRC/apiargs.c" "$SRC/base64.c" "$SRC/buttons.c" "$SRC/json.c" \
+    "$SRC/jstream.c" "$SRC/sha256.c"
 "$OUT/test_core"
 
 echo "== test_mdns =="
