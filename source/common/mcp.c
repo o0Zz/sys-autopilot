@@ -565,6 +565,31 @@ static void tool_upload_file(HttpRequest *req, const char *id, const JsonDoc *do
     send_tool_ok(req->fd, id, msg);
 }
 
+static void tool_move_file(HttpRequest *req, const char *id, const JsonDoc *doc, int args) {
+    char src[768];
+    if (!get_path_arg(req, id, doc, args, src, sizeof(src)))
+        return;
+
+    char to[512];
+    int tok = json_obj_get(doc, args, "to");
+    if (tok < 0 || !json_get_string(doc, tok, to, sizeof(to)) || to[0] == '\0') {
+        send_tool_error(req->fd, id, "missing 'to' (destination path)");
+        return;
+    }
+    char dst[768];
+    const char *err = NULL;
+    if (!files_resolve(to, dst, sizeof(dst), &err) ||
+        !files_move_path(src, dst, &err)) {
+        send_tool_error(req->fd, id, err);
+        return;
+    }
+
+    char msg[820];
+    snprintf(msg, sizeof(msg), "moved to %s", dst + strlen(FILES_ROOT));
+    LOGF("mcp: %s\n", msg);
+    send_tool_ok(req->fd, id, msg);
+}
+
 static void tool_delete_file(HttpRequest *req, const char *id, const JsonDoc *doc, int args) {
     char fspath[768];
     if (!get_path_arg(req, id, doc, args, fspath, sizeof(fspath)))
@@ -1084,6 +1109,7 @@ static void handle_tools_call(HttpRequest *req, const char *id, const JsonDoc *d
     else if (strcmp(name, "read_file") == 0)        tool_read_file(req, id, doc, args);
     else if (strcmp(name, "upload_file") == 0)      tool_upload_file(req, id, doc, args, content_streamed);
     else if (strcmp(name, "delete_file") == 0)      tool_delete_file(req, id, doc, args);
+    else if (strcmp(name, "move_file") == 0)        tool_move_file(req, id, doc, args);
     else if (strcmp(name, "hash_file") == 0)        tool_hash_file(req, id, doc, args);
     else if (strcmp(name, "create_token") == 0)     tool_create_token(req, id);
     else if (strcmp(name, "revoke_token") == 0)     tool_revoke_token(req, id, doc, args);

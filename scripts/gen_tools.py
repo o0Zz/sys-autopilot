@@ -163,6 +163,18 @@ tools = [
         }, "required": ["path", "content"]},
     },
     {
+        "name": "move_file",
+        "description": ("Rename or move a file or directory on the SD card. Parent "
+                        "directories of the destination are created; an existing "
+                        "destination is never overwritten."),
+        "inputSchema": {"type": "object", "properties": {
+            "path": path_prop,
+            "to": {"type": "string",
+                   "description": ("Absolute destination path on the SD card, e.g. "
+                                   "/switch/myapp/log.old.txt")},
+        }, "required": ["path", "to"]},
+    },
+    {
         "name": "delete_file",
         "description": "Delete a file or empty directory on the SD card.",
         "inputSchema": {"type": "object", "properties": {"path": path_prop},

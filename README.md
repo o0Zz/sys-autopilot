@@ -207,6 +207,7 @@ Details:
 | `list_directory` | JSON listing of an SD card directory |
 | `read_file` | Read text files (32 KB pages, negative `offset` = tail) — ideal for logs |
 | `upload_file` | Write a file (base64 `content`, **streamed to SD — no size cap**) |
+| `move_file` | Rename or move a file or directory (destination parents are created, an existing destination is never overwritten) |
 | `delete_file` | Delete a file / empty directory |
 | `hash_file` | SHA-256 a file (streamed, any size); optional `expected` returns `matched` — verify an upload in one call |
 | `get_theme` / `set_theme` | Read / set the system UI theme (`light` or `dark`; the visible change applies after the HOME menu reloads — sleep/wake or reboot) |

@@ -101,6 +101,7 @@ static void test_tools_list(void) {
     assert(strstr(r, "\"tap_screen\""));
     assert(strstr(r, "\"swipe_screen\""));
     assert(strstr(r, "\"upload_file\""));
+    assert(strstr(r, "\"move_file\""));
     assert(strstr(r, "\"hash_file\""));
     assert(strstr(r, "\"screenshot\""));
     assert(strstr(r, "\"inputSchema\""));
@@ -502,6 +503,53 @@ static void test_process_tools(void) {
     printf("process tools ok\n");
 }
 
+// The REST handler is covered by test_move_file above; this checks the tool
+// wrapper: argument plumbing, and errors arriving in-band rather than as HTTP
+// status codes.
+static void test_move_file_tool(void) {
+    system("rm -rf " FAKE_SD " && mkdir -p " FAKE_SD "/mv");
+    FILE *f = fopen(FAKE_SD "/mv/a.txt", "wb");
+    assert(f && fputs("abc", f) >= 0);
+    fclose(f);
+    struct stat st;
+
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":40,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"move_file\",\"arguments\":"
+                           "{\"path\":\"/mv/a.txt\",\"to\":\"/mv/sub/b.txt\"}}}");
+    assert(strstr(r, "\"isError\":false"));
+    assert(strstr(r, "moved to /mv/sub/b.txt"));
+    assert(stat(FAKE_SD "/mv/sub/b.txt", &st) == 0 && st.st_size == 3);
+
+    // Missing source.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":41,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":"
+               "{\"path\":\"/mv/nope\",\"to\":\"/mv/x\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+
+    // Never overwrites an existing destination (moving onto itself is a
+    // deliberate no-op, so it is not the case to test here).
+    f = fopen(FAKE_SD "/mv/taken.txt", "wb");
+    assert(f);
+    fclose(f);
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":"
+               "{\"path\":\"/mv/sub/b.txt\",\"to\":\"/mv/taken.txt\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(stat(FAKE_SD "/mv/sub/b.txt", &st) == 0);
+
+    // Missing destination, and traversal in it.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":43,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":{\"path\":\"/mv/sub/b.txt\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(strstr(r, "'to'"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":44,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":"
+               "{\"path\":\"/mv/sub/b.txt\",\"to\":\"/../escape\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(stat(FAKE_SD "/mv/sub/b.txt", &st) == 0);
+    printf("move_file tool ok\n");
+}
+
 static void test_touch_tools(void) {
     stub_touch_count = 0;
     const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":30,\"method\":\"tools/call\","
@@ -555,6 +603,7 @@ int main(void) {
     test_power_tools();
     test_process_tools();
     test_touch_tools();
+    test_move_file_tool();
     printf("all mcp tests passed\n");
     return 0;
 }
