@@ -44,18 +44,29 @@ void __libnx_initheap(void)
     fake_heap_end   = inner_heap + sizeof(inner_heap);
 }
 
-// Keep socket buffers small to fit the sysmodule memory budget.
+// Socket buffers. The pool bsd allocates for us is
+// sb_efficiency * (tcp_tx + tcp_rx + udp_tx + udp_rx), and every socket in
+// existence draws its buffers from it -- including connections merely waiting
+// in the listen backlog. At sb_efficiency 2 that pool held the listener plus
+// exactly one connection, so while any request was in flight the next client
+// was accepted by the stack and then immediately reset, which is what made
+// browsers (several connections per page load) and the REST clients see
+// "connection forcibly closed" at random.
+//
+// Smaller per-socket buffers buy more of them for roughly the same memory:
+// this pool is ~520K against ~232K before, and holds ten sockets instead of
+// two. The REST payloads are small, and a 16K receive window still streams a
+// screenshot or a sysmodule upload at several MB/s on a LAN.
 static const SocketInitConfig kSocketConfig = {
-    .tcp_tx_buf_size     = 0x8000,
-    .tcp_rx_buf_size     = 0x10000,
+    .tcp_tx_buf_size     = 0x4000,
+    .tcp_rx_buf_size     = 0x4000,
     .tcp_tx_buf_max_size = 0,       // fixed size
     .tcp_rx_buf_max_size = 0,       // fixed size
     .udp_tx_buf_size     = 0x2400,
-    .udp_rx_buf_size     = 0xA500,
-    .sb_efficiency       = 2,
-    // Sessions in concurrent use: the TCP listener, one accepted client, and
-    // the persistent mDNS/DNS-SD UDP socket. 3 is the minimum; use 4 for a
-    // little headroom.
+    .udp_rx_buf_size     = 0x2400,  // mDNS packets are ~1.5K
+    .sb_efficiency       = 10,
+    // Sessions are bsd IPC channels, not sockets: this server is
+    // single-threaded, so it never needs more than a couple.
     .num_bsd_sessions    = 4,
     .bsd_service_type    = BsdServiceType_User,
 };

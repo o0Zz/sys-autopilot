@@ -123,29 +123,54 @@ static ConnDisp handle_one(int fd, const Config *cfg) {
     return (req.keep_alive && drain_body(&req)) ? CONN_KEEP : CONN_CLOSE;
 }
 
-// Closes a client connection without ever emitting an RST.
+// How long a freshly accepted connection gets to start sending its request.
+// The server is single-threaded, so this is the whole server's dead time when
+// a peer connects and then says nothing -- which browsers do routinely, they
+// pre-open connections they may never use. The http layer's own 10s timeout
+// still covers a transfer already under way; this only bounds the silence
+// before one starts.
+#define FIRST_REQUEST_MS 1000
+
+// How long close_client waits for the peer to hang up before doing it itself.
+#define CLIENT_LINGER_MS 50
+
+// Ends a client connection without emitting an RST, and without leaving the
+// console holding TIME_WAIT.
+//
+// Two hazards, both of which bite this server hard:
 //
 // close() on a socket that still has unread bytes queued resets the connection
-// instead of finishing the handshake, and a keep-alive socket hits that easily:
-// the peer can put a request on the wire in the moment between our decision to
-// close and the close itself. It then reports a connection reset (browsers show
-// this on reload, reusing a pooled socket) instead of seeing a clean end of
-// connection, which they retry silently. So: half-close to push the FIN out,
-// then read and discard whatever is still in flight until the peer's own FIN
-// comes back or the grace period lapses.
+// rather than finishing the handshake, and the peer reports a connection reset
+// instead of the clean end of connection it would retry silently.
+//
+// And whichever side sends FIN first keeps the socket in TIME_WAIT afterwards.
+// Those linger, they are drawn from the same small socket pool as live
+// connections (see kSocketConfig in main.c), and the server closing every
+// connection itself meant a burst of requests exhausted the pool and the
+// console reset everything until they aged out.
+//
+// So: drain first and let the peer hang up. Responses always carry a
+// Content-Length, so a client knows the body has ended and closes on its own,
+// usually within a millisecond or two on a LAN -- which makes us the passive
+// closer and leaves TIME_WAIT on the client where it belongs. Only a peer that
+// is still idling when the grace period ends gets a FIN from us.
 static void close_client(int fd) {
-    shutdown(fd, SHUT_WR);
-    for (int waited = 0; waited < 50; waited += 10) {
+    bool peer_closed = false;
+    for (int waited = 0; waited < CLIENT_LINGER_MS; waited += 10) {
         struct pollfd p = { .fd = fd, .events = POLLIN, .revents = 0 };
         if (poll(&p, 1, 10) <= 0)
             continue; // timeout or EINTR: wait out the rest of the grace period
         char scratch[512];
         ssize_t n = recv(fd, scratch, sizeof(scratch), 0);
-        if (n == 0) // peer's FIN: both directions are done
+        if (n == 0) { // peer's FIN: it closed first, so we owe no TIME_WAIT
+            peer_closed = true;
             break;
+        }
         if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
             break;
     }
+    if (!peer_closed)
+        shutdown(fd, SHUT_WR); // idle peer: end it ourselves, FIN before close
     close(fd);
 }
 
@@ -396,7 +421,11 @@ void server_run(const Config *cfg, ServerIdleCb idle) {
             continue;
         }
 
-        handle_connection(client, cfg);
+        // Drop a peer that connects and then says nothing, rather than
+        // letting it block every other client behind it.
+        struct pollfd first = { .fd = client, .events = POLLIN, .revents = 0 };
+        if (poll(&first, 1, FIRST_REQUEST_MS) > 0)
+            handle_connection(client, cfg);
         close_client(client);
 
         // Agent-requested power action: executed only after the response has
