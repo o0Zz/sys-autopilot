@@ -33,6 +33,7 @@
   <span id="msg"></span>
   <label class="btn">Upload<input type="file" id="up" multiple hidden></label>
   <button id="refresh">Refresh</button>
+  <button id="reboot">Reboot</button>
 </header>
 <main>
   <ul id="list"></ul>
@@ -169,6 +170,15 @@ $('save').onclick = async () => {
   loadDir(dir);
 };
 
+// Ctrl+S (Cmd+S on macOS) saves the open file instead of the browser's
+// "save page as" dialog.
+document.onkeydown = e => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (!$('save').disabled) $('save').onclick();
+  }
+};
+
 $('del').onclick = async () => {
   if (!confirm('Delete ' + file + ' ?')) return;
   await call(file, { method: 'DELETE' }, 'delete');
@@ -206,6 +216,14 @@ $('up').onchange = async e => {
 };
 
 $('refresh').onclick = () => { loadDir(dir); if (file) reload(); };
+
+$('reboot').onclick = async () => {
+  if (!confirm('Reboot the console? The explorer is unreachable until it boots back.')) return;
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  const r = await fetch('/power/restart', { method: 'POST' });
+  if (!r.ok) return say('reboot failed: ' + (await r.text()).slice(0, 120), true);
+  say('rebooting...', true);
+};
 
 document.ondragover = e => e.preventDefault();
 document.ondrop = e => {
