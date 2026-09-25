@@ -176,7 +176,7 @@ ContainerKind container_detect(const uint8_t *buf, size_t len,
 
 // --- helpers -----------------------------------------------------------------
 
-#define INSTALL_CHUNK 0x100000            // 1 MiB streaming chunk
+#define INSTALL_CHUNK 0x20000             // 128 KiB streaming chunk; static, so it costs system memory
 #define MAX_FILES 64                      // NSP/XCI have a handful of entries
 
 // A unified content entry, with the file's ABSOLUTE byte offset within the

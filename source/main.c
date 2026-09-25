@@ -18,7 +18,7 @@
 // Inner heap: socket transfer memory + stdio buffers + dir listing JSON +
 // headroom for the title installer (ncm IPC, mounting the cnmt NCA). The large
 // fixed buffers (JPEG, I/O, HDLS workmem, install chunk) are static bss.
-#define INNER_HEAP_SIZE 0x200000
+#define INNER_HEAP_SIZE 0x100000
 
 #ifdef __cplusplus
 extern "C" {
