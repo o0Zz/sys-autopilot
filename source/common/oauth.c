@@ -359,13 +359,13 @@ void oauth_handle_register(HttpRequest *req) {
         return;
 
     // Echo redirect_uris back when provided (clients expect it).
-    static JsonDoc doc;
+    JsonDoc *doc = json_shared_doc();
     char redirect_uris[1024] = "[]";
-    if (json_parse(&doc, body, strlen(body)) == 0 && doc.ntok > 0 &&
-        doc.tok[0].type == JSMN_OBJECT) {
-        int uris = json_obj_get(&doc, 0, "redirect_uris");
+    if (json_parse(doc, body, strlen(body)) == 0 && doc->ntok > 0 &&
+        doc->tok[0].type == JSMN_OBJECT) {
+        int uris = json_obj_get(doc, 0, "redirect_uris");
         if (uris >= 0)
-            json_raw(&doc, uris, redirect_uris, sizeof(redirect_uris));
+            json_raw(doc, uris, redirect_uris, sizeof(redirect_uris));
     }
 
     http_send_json(req->fd, 201,

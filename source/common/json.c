@@ -5,6 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+static JsonDoc g_shared_doc;
+
+JsonDoc *json_shared_doc(void) {
+    return &g_shared_doc;
+}
+
 int json_parse(JsonDoc *doc, const char *src, size_t len) {
     jsmn_parser p;
     jsmn_init(&p);

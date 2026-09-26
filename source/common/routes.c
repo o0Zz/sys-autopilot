@@ -7,15 +7,19 @@
 #include "titles.h"
 #include "network.h"
 #include "json.h"
+#ifndef AUTOPILOT_NO_MCP
 #include "mcp.h"
 #include "oauth.h"
+#endif
 #include "power.h"
 #include "process.h"
+#include "scratch.h"
 #include "screen.h"
 #include "settings.h"
 #include "log.h"
 
 #include <assert.h>
+#include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,28 +114,28 @@ static void send_input_result(HttpRequest *req, Result rc) {
 }
 
 static void handle_input_tap(HttpRequest *req) {
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
     u64 mask;
     const char *err = NULL;
-    if (!args_get_buttons(&doc, root, &mask, &err)) {
+    if (!args_get_buttons(doc, root, &mask, &err)) {
         http_send_error(req->fd, 400, err);
         return;
     }
-    send_input_result(req, input_tap(mask, args_get_duration(&doc, root,
+    send_input_result(req, input_tap(mask, args_get_duration(doc, root,
                                                              INPUT_DEFAULT_TAP_MS)));
 }
 
 static void handle_input_hold_release(HttpRequest *req, bool hold) {
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
     u64 mask;
     const char *err = NULL;
-    if (!args_get_buttons(&doc, root, &mask, &err)) {
+    if (!args_get_buttons(doc, root, &mask, &err)) {
         http_send_error(req->fd, 400, err);
         return;
     }
@@ -147,13 +151,13 @@ static_assert(ARGS_TOUCH_MAX_X == INPUT_TOUCH_WIDTH - 1, "touch width drift");
 static_assert(ARGS_TOUCH_MAX_Y == INPUT_TOUCH_HEIGHT - 1, "touch height drift");
 
 static void handle_input_touch(HttpRequest *req) {
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
     int x, y, duration;
     const char *err = NULL;
-    if (!args_get_touch(&doc, root, &x, &y, &duration, &err)) {
+    if (!args_get_touch(doc, root, &x, &y, &duration, &err)) {
         http_send_error(req->fd, 400, err);
         return;
     }
@@ -161,13 +165,13 @@ static void handle_input_touch(HttpRequest *req) {
 }
 
 static void handle_input_swipe(HttpRequest *req) {
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
     int x0, y0, x1, y1, duration;
     const char *err = NULL;
-    if (!args_get_swipe(&doc, root, &x0, &y0, &x1, &y1, &duration, &err)) {
+    if (!args_get_swipe(doc, root, &x0, &y0, &x1, &y1, &duration, &err)) {
         http_send_error(req->fd, 400, err);
         return;
     }
@@ -175,14 +179,14 @@ static void handle_input_swipe(HttpRequest *req) {
 }
 
 static void handle_input_stick(HttpRequest *req) {
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
     int side, duration;
     float x, y;
     const char *err = NULL;
-    if (!args_get_stick(&doc, root, &side, &x, &y, &duration, &err)) {
+    if (!args_get_stick(doc, root, &side, &x, &y, &duration, &err)) {
         http_send_error(req->fd, 400, err);
         return;
     }
@@ -191,7 +195,17 @@ static void handle_input_stick(HttpRequest *req) {
 
 // --- /status -----------------------------------------------------------------
 
+// The inner heap's bounds (see __libnx_initheap in main.c).
+extern void *fake_heap_start;
+extern void *fake_heap_end;
+
 static void handle_status(HttpRequest *req) {
+    // Heap figures for sizing INNER_HEAP_SIZE: arena is how far the heap has
+    // grown (newlib rarely gives it back, so it tracks the high-water mark);
+    // used is what is allocated right now.
+    struct mallinfo mi = mallinfo();
+    size_t heap_size = (size_t)((char *)fake_heap_end - (char *)fake_heap_start);
+
     u32 ver = hosversionGet();
     uint32_t pct = 0;
     bool charging = false;
@@ -203,12 +217,16 @@ static void handle_status(HttpRequest *req) {
                        "\"controllerAttached\":%s,"
                        "\"keepAwake\":%s,"
                        "\"uptimeSeconds\":%llu,"
+                       "\"heapSizeBytes\":%zu,"
+                       "\"heapArenaBytes\":%zu,"
+                       "\"heapUsedBytes\":%zu,"
                        "\"batteryPercent\":%u,"
                        "\"charging\":%s}",
                        HOSVER_MAJOR(ver), HOSVER_MINOR(ver), HOSVER_MICRO(ver),
                        input_is_attached() ? "true" : "false",
                        g_keep_awake ? "true" : "false",
                        (unsigned long long)routes_uptime_seconds(),
+                       heap_size, mi.arena, mi.uordblks,
                        pct, charging ? "true" : "false");
     } else {
         http_send_json(req->fd, 200,
@@ -216,11 +234,15 @@ static void handle_status(HttpRequest *req) {
                        "\"firmware\":\"%u.%u.%u\","
                        "\"controllerAttached\":%s,"
                        "\"keepAwake\":%s,"
-                       "\"uptimeSeconds\":%llu}",
+                       "\"uptimeSeconds\":%llu,"
+                       "\"heapSizeBytes\":%zu,"
+                       "\"heapArenaBytes\":%zu,"
+                       "\"heapUsedBytes\":%zu}",
                        HOSVER_MAJOR(ver), HOSVER_MINOR(ver), HOSVER_MICRO(ver),
                        input_is_attached() ? "true" : "false",
                        g_keep_awake ? "true" : "false",
-                       (unsigned long long)routes_uptime_seconds());
+                       (unsigned long long)routes_uptime_seconds(),
+                       heap_size, mi.arena, mi.uordblks);
     }
 }
 
@@ -237,13 +259,13 @@ static void handle_settings_theme(HttpRequest *req) {
         return;
     }
     // POST {"theme":"light"|"dark"}
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
     char val[16] = {0};
-    int t = json_obj_get(&doc, root, "theme");
-    if (t < 0 || !json_get_string(&doc, t, val, sizeof(val))) {
+    int t = json_obj_get(doc, root, "theme");
+    if (t < 0 || !json_get_string(doc, t, val, sizeof(val))) {
         http_send_error(req->fd, 400, "missing 'theme' (\"light\" or \"dark\")");
         return;
     }
@@ -268,13 +290,13 @@ static void handle_settings_nickname(HttpRequest *req) {
         http_send_json(req->fd, 200, "{\"nickname\":\"%s\"}", name);
         return;
     }
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
     char name[128] = {0};
-    int t = json_obj_get(&doc, root, "nickname");
-    if (t < 0 || !json_get_string(&doc, t, name, sizeof(name)) || name[0] == '\0') {
+    int t = json_obj_get(doc, root, "nickname");
+    if (t < 0 || !json_get_string(doc, t, name, sizeof(name)) || name[0] == '\0') {
         http_send_error(req->fd, 400, "missing non-empty 'nickname'");
         return;
     }
@@ -296,13 +318,13 @@ static void handle_settings_float(HttpRequest *req, const char *key,
         http_send_json(req->fd, 200, "{\"%s\":%.3f}", key, v);
         return;
     }
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
-    int t = json_obj_get(&doc, root, key);
+    int t = json_obj_get(doc, root, key);
     double v;
-    if (t < 0 || !json_get_double(&doc, t, &v)) {
+    if (t < 0 || !json_get_double(doc, t, &v)) {
         http_send_error(req->fd, 400, "missing numeric value (0.0 - 1.0)");
         return;
     }
@@ -344,13 +366,13 @@ static void handle_settings_auto_time(HttpRequest *req) {
         http_send_json(req->fd, 200, "{\"autoTime\":%s}", en ? "true" : "false");
         return;
     }
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
-    int t = json_obj_get(&doc, root, "autoTime");
+    int t = json_obj_get(doc, root, "autoTime");
     bool en;
-    if (t < 0 || !json_get_bool(&doc, t, &en)) {
+    if (t < 0 || !json_get_bool(doc, t, &en)) {
         http_send_error(req->fd, 400, "missing boolean 'autoTime'");
         return;
     }
@@ -384,19 +406,19 @@ static void handle_settings_datetime(HttpRequest *req) {
                        dt.timezone);
         return;
     }
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
 
     DateTime dt = {0};
     settings_get_datetime(&dt);
-    dt.year   = json_field_int(&doc, root, "year",   dt.year);
-    dt.month  = json_field_int(&doc, root, "month",  dt.month);
-    dt.day    = json_field_int(&doc, root, "day",    dt.day);
-    dt.hour   = json_field_int(&doc, root, "hour",   dt.hour);
-    dt.minute = json_field_int(&doc, root, "minute", dt.minute);
-    dt.second = json_field_int(&doc, root, "second", dt.second);
+    dt.year   = json_field_int(doc, root, "year",   dt.year);
+    dt.month  = json_field_int(doc, root, "month",  dt.month);
+    dt.day    = json_field_int(doc, root, "day",    dt.day);
+    dt.hour   = json_field_int(doc, root, "hour",   dt.hour);
+    dt.minute = json_field_int(doc, root, "minute", dt.minute);
+    dt.second = json_field_int(doc, root, "second", dt.second);
 
     if (dt.month < 1 || dt.month > 12 || dt.day < 1 || dt.day > 31 ||
         dt.hour < 0 || dt.hour > 23 || dt.minute < 0 || dt.minute > 59 ||
@@ -427,7 +449,16 @@ static const char *storage_label(uint8_t storage_id) {
 }
 
 static void handle_titles(HttpRequest *req) {
-    static TitleInfo titles[TITLES_MAX];
+    // Each JSON entry is well under 256 bytes; TITLES_MAX entries fit
+    // comfortably. Both buffers come from the request scratch arena.
+    enum { BODY_SIZE = TITLES_MAX * 256 + 32 };
+    TitleInfo *titles = scratch_alloc(sizeof(*titles) * TITLES_MAX);
+    char *body = scratch_alloc(BODY_SIZE);
+    if (!titles || !body) {
+        http_send_error(req->fd, 500, "out of scratch memory");
+        return;
+    }
+
     int count = 0;
     char err[128] = {0};
     if (!titles_list(titles, TITLES_MAX, &count, err, sizeof(err))) {
@@ -435,19 +466,16 @@ static void handle_titles(HttpRequest *req) {
         return;
     }
 
-    // Build the JSON into a static buffer (the list can be large). Each entry is
-    // well under 256 bytes; TITLES_MAX entries fit comfortably.
-    static char body[TITLES_MAX * 256 + 32];
-    size_t pos = (size_t)snprintf(body, sizeof(body), "{\"titles\":[");
-    for (int i = 0; i < count && pos < sizeof(body) - 256; i++) {
+    size_t pos = (size_t)snprintf(body, BODY_SIZE, "{\"titles\":[");
+    for (int i = 0; i < count && pos < BODY_SIZE - 256; i++) {
         char name[160];
         json_escape(titles[i].name, strlen(titles[i].name), name, sizeof(name));
-        pos += (size_t)snprintf(body + pos, sizeof(body) - pos,
+        pos += (size_t)snprintf(body + pos, BODY_SIZE - pos,
             "%s{\"titleId\":\"%016llx\",\"version\":%u,\"storage\":\"%s\",\"name\":\"%s\"}",
             i ? "," : "", (unsigned long long)titles[i].title_id,
             titles[i].version, storage_label(titles[i].storage_id), name);
     }
-    pos += (size_t)snprintf(body + pos, sizeof(body) - pos, "]}");
+    pos += (size_t)snprintf(body + pos, BODY_SIZE - pos, "]}");
     http_send_response(req->fd, 200, "application/json", body, pos);
 }
 
@@ -467,24 +495,24 @@ static void handle_dns_get(HttpRequest *req) {
 
 // POST {"automatic":true} | {"primary":"1.2.3.4","secondary":"5.6.7.8"}
 static void handle_dns_set(HttpRequest *req) {
-    static JsonDoc doc;
-    int root = read_json_body(req, &doc);
+    JsonDoc *doc = json_shared_doc();
+    int root = read_json_body(req, doc);
     if (root < 0)
         return;
 
     bool automatic = false;
-    int t = json_obj_get(&doc, root, "automatic");
+    int t = json_obj_get(doc, root, "automatic");
     if (t >= 0)
-        json_get_bool(&doc, t, &automatic);
+        json_get_bool(doc, t, &automatic);
 
     // Buffers sized generously: json_get_string needs headroom (it reserves a
     // few bytes for escape expansion), so a 16-byte buffer would reject a full
     // 15-char dotted IPv4. network_set_dns validates the actual format.
     char primary[64] = {0}, secondary[64] = {0};
-    t = json_obj_get(&doc, root, "primary");
-    if (t >= 0) json_get_string(&doc, t, primary, sizeof(primary));
-    t = json_obj_get(&doc, root, "secondary");
-    if (t >= 0) json_get_string(&doc, t, secondary, sizeof(secondary));
+    t = json_obj_get(doc, root, "primary");
+    if (t >= 0) json_get_string(doc, t, primary, sizeof(primary));
+    t = json_obj_get(doc, root, "secondary");
+    if (t >= 0) json_get_string(doc, t, secondary, sizeof(secondary));
 
     if (!automatic && !primary[0]) {
         http_send_error(req->fd, 400, "provide 'primary' (IPv4) or set 'automatic':true");
@@ -578,12 +606,12 @@ static bool process_arg_title_id(HttpRequest *req, uint64_t *out) {
             return false;
         }
     } else {
-        static JsonDoc doc;
-        int root = read_json_body(req, &doc);
+        JsonDoc *doc = json_shared_doc();
+        int root = read_json_body(req, doc);
         if (root < 0)
             return false; // response already sent
-        int t = json_obj_get(&doc, root, "titleId");
-        if (t < 0 || !json_get_string(&doc, t, raw, sizeof(raw))) {
+        int t = json_obj_get(doc, root, "titleId");
+        if (t < 0 || !json_get_string(doc, t, raw, sizeof(raw))) {
             http_send_error(req->fd, 400, "missing string 'titleId'");
             return false;
         }
@@ -732,8 +760,10 @@ static const Route kRoutes[] = {
     { "POST",   "/network/dns",       handle_dns_set },
     { "POST",   "/install",           handle_install },
     { "PUT",    "/install",           handle_install },
+#ifndef AUTOPILOT_NO_MCP
     { "POST",   "/mcp",               mcp_handle_post },
     { "GET",    "/mcp",               mcp_handle_get },
+#endif
     { "POST",   "/power/sleep",       handle_power_sleep },
     { "POST",   "/power/restart",     handle_power_restart },
     { "POST",   "/power/off",         handle_power_off },
@@ -750,10 +780,12 @@ static const Route kRoutes[] = {
     { "POST",   "/settings/auto-time",    handle_settings_auto_time },
     { "GET",    "/settings/datetime",     handle_settings_datetime },
     { "POST",   "/settings/datetime",     handle_settings_datetime },
+#ifndef AUTOPILOT_NO_MCP
     { "POST",   "/oauth/register",    oauth_handle_register },
     { "GET",    "/oauth/authorize",   oauth_handle_authorize_get },
     { "POST",   "/oauth/authorize",   oauth_handle_authorize_post },
     { "POST",   "/oauth/token",       oauth_handle_token },
+#endif
 };
 
 // CORS preflight: browsers send OPTIONS with no Authorization header before
@@ -772,11 +804,14 @@ static void handle_options(HttpRequest *req) {
 }
 
 void routes_handle(HttpRequest *req) {
+    scratch_reset();
+
     if (strcmp(req->method, "OPTIONS") == 0) {
         handle_options(req);
         return;
     }
 
+#ifndef AUTOPILOT_NO_MCP
     // OAuth discovery documents (clients probe both the bare path and the
     // RFC 9728 path-suffix variant, e.g. .../oauth-protected-resource/mcp).
     if (strcmp(req->method, "GET") == 0) {
@@ -790,6 +825,7 @@ void routes_handle(HttpRequest *req) {
             return;
         }
     }
+#endif
 
     bool path_found = false;
     for (size_t i = 0; i < sizeof(kRoutes) / sizeof(kRoutes[0]); i++) {

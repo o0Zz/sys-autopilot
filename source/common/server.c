@@ -3,7 +3,9 @@
 #include "input.h"
 #include "mdns.h"
 #include "netif.h"
+#ifndef AUTOPILOT_NO_MCP
 #include "oauth.h"
+#endif
 #include "power.h"
 #include "routes.h"
 #include "log.h"
@@ -107,8 +109,10 @@ static ConnDisp handle_one(int fd, const Config *cfg) {
             // Static config token, or any OAuth-issued token from tokens.txt.
             if (cfg->token[0] != '\0' && http_secure_streq(bearer, cfg->token))
                 ok = true;
+#ifndef AUTOPILOT_NO_MCP
             else if (oauth_token_valid(bearer))
                 ok = true;
+#endif
         }
 
         if (!ok) {

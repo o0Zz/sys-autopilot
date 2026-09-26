@@ -27,6 +27,17 @@ make -C app     # builds the dev .nro flavor (see below)
 ./tests/run.sh  # host-side test suite (no devkitPro required)
 ```
 
+To leave more memory to the rest of the system when you only use the REST
+API, build without MCP:
+
+```sh
+make clean && make MCP=0
+```
+
+This drops `/mcp` and the OAuth browser login that exists for MCP clients
+(about 100 KB of code and 120 KB of RAM). Bearer auth then accepts only the
+`token` from `config.ini`; Basic auth is unchanged.
+
 ## Installing
 
 Download the latest `sys-autopilot-<version>.zip` from
@@ -486,10 +497,12 @@ GET /status
 ```
 
 ```json
-{"version":"1.1.0","firmware":"19.0.1","controllerAttached":true,"keepAwake":true,"uptimeSeconds":4242,"batteryPercent":87,"charging":true}
+{"version":"1.1.0","firmware":"19.0.1","controllerAttached":true,"keepAwake":true,"uptimeSeconds":4242,"heapSizeBytes":1048576,"heapArenaBytes":612352,"heapUsedBytes":530112,"batteryPercent":87,"charging":true}
 ```
 
 `batteryPercent`/`charging` are included when the battery service is available.
+The `heap*` fields describe the sysmodule's own heap: its fixed size, how far
+it has grown (close to its high-water mark), and what is allocated now.
 
 ### System settings
 
@@ -556,6 +569,7 @@ source/common/         shared server core
   mcp_tools.h          generated tools/list payload (scripts/gen_tools.py)
   jstream.c            streaming JSON pre-pass (diverts upload content to disk)
   json.c               jsmn wrapper helpers (parse/get/escape)
+  scratch.c            request-scoped arena for large transient buffers
   base64.c             streaming base64 encoder/decoder
   buttons.c            button name table (host-testable)
   apiargs.c            shared JSON argument parsing (REST + MCP)

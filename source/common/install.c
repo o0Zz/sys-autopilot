@@ -172,11 +172,12 @@ ContainerKind container_detect(const uint8_t *buf, size_t len,
 #include <sys/stat.h>
 #include "log.h"
 #include "nx_ext.h"
+#include "scratch.h"
 #include "sha256.h"
 
 // --- helpers -----------------------------------------------------------------
 
-#define INSTALL_CHUNK 0x20000             // 128 KiB streaming chunk; static, so it costs system memory
+#define INSTALL_CHUNK 0x20000             // 128 KiB streaming chunk (scratch arena)
 #define MAX_FILES 64                      // NSP/XCI have a handful of entries
 
 // A unified content entry, with the file's ABSOLUTE byte offset within the
@@ -200,8 +201,6 @@ typedef struct {
     u8  storage_id;
     u32 reserved2;
 } PackagedContentMetaHeader;
-
-static u8 g_chunk[INSTALL_CHUNK];
 
 static bool g_ncm_ok, g_ns_ok, g_es_ok;
 
@@ -258,6 +257,35 @@ typedef struct {
     bool registered;
 } WrittenContent;
 
+// Every buffer the installer needs, taken from the request scratch arena in
+// one piece for the duration of install_stream().
+typedef struct {
+    u8 chunk[INSTALL_CHUNK];
+    u8 prefix[0x1104];
+    u8 hdrbuf[0x10 + MAX_FILES * 0x40 + 0x4000]; // fits a PFS0 (0x18/entry) or HFS0 (0x40/entry) table
+    union {
+        Pfs0Entry pe[MAX_FILES];                 // NSP
+        struct {                                 // XCI
+            Hfs0Entry rparts[MAX_FILES];
+            Hfs0Entry se[MAX_FILES];
+        };
+    };
+    InstallEntry entries[MAX_FILES];
+    u8 cnmt_nca[0x4000];
+    u8 cnmt_buf[0x4000];
+    u8 tik_buf[0x600];
+    u8 cert_buf[0x800];
+    u8 ext_hdr[0x80];
+    u8 meta_blob[sizeof(NcmContentMetaHeader) + 0x80
+                 + (MAX_FILES + 1) * sizeof(NcmContentInfo)];
+    WrittenContent written[MAX_FILES];
+    NsExtContentStorageRecord recs[64];
+} InstallWork;
+
+_Static_assert(sizeof(InstallWork) <= SCRATCH_SIZE, "installer buffers exceed scratch arena");
+
+static InstallWork *g_w;
+
 // Streams `size` bytes from the source into an NCM placeholder, registering it.
 // Verifies SHA-256 against the content id (the NCA filename). `prebuf`/`prelen`
 // are bytes already read from the stream that belong to this content.
@@ -286,11 +314,11 @@ static Result write_content(NcmContentStorage *cs, const NcmContentId *cid,
     while (written < size) {
         u64 want = size - written;
         size_t chunk = want > INSTALL_CHUNK ? INSTALL_CHUNK : (size_t)want;
-        long got = read_fn(ctx, g_chunk, chunk);
+        long got = read_fn(ctx, g_w->chunk, chunk);
         if (got <= 0) { rc = MAKERESULT(Module_Libnx, LibnxError_IoError); goto done; }
-        rc = ncmContentStorageWritePlaceHolder(cs, &phid, written, g_chunk, (size_t)got);
+        rc = ncmContentStorageWritePlaceHolder(cs, &phid, written, g_w->chunk, (size_t)got);
         if (R_FAILED(rc)) goto done;
-        if (verify) sha256_stream_update(&sha, g_chunk, (size_t)got);
+        if (verify) sha256_stream_update(&sha, g_w->chunk, (size_t)got);
         written += (u64)got;
     }
 
@@ -368,8 +396,8 @@ static bool read_cnmt(NcmContentStorage *cs, const NcmContentId *meta_cid,
     }
     s64 csize = 0;
     fsFileGetSize(&cf, &csize);
-    static u8 cnmt_buf[0x4000];
-    if (csize <= 0 || csize > (s64)sizeof(cnmt_buf)) {
+    u8 *cnmt_buf = g_w->cnmt_buf;
+    if (csize <= 0 || csize > (s64)sizeof(g_w->cnmt_buf)) {
         fsFileClose(&cf); *err = ".cnmt size invalid"; goto out;
     }
     u64 br = 0;
@@ -426,14 +454,14 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     }
 
     // Buffers for the small metadata files (cnmt.nca / .tik / .cert).
-    static u8 cnmt_nca[0x4000];
+    u8 *cnmt_nca = g_w->cnmt_nca;
     size_t cnmt_nca_size = 0;
     NcmContentId meta_cid = {0};
     bool have_meta_cid = false;
-    static u8 tik_buf[0x600]; size_t tik_size = 0;
-    static u8 cert_buf[0x800]; size_t cert_size = 0;
+    u8 *tik_buf = g_w->tik_buf; size_t tik_size = 0;
+    u8 *cert_buf = g_w->cert_buf; size_t cert_size = 0;
 
-    static WrittenContent written[MAX_FILES];
+    WrittenContent *written = g_w->written;
     int written_n = 0;
     bool failed = false;
 
@@ -445,7 +473,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
         while (consumed < file_abs) {
             uint64_t gap = file_abs - consumed;
             size_t want = gap > INSTALL_CHUNK ? INSTALL_CHUNK : (size_t)gap;
-            n = read_fn(ctx, g_chunk, want);
+            n = read_fn(ctx, g_w->chunk, want);
             if (n <= 0) { fail(out, 400, "unexpected end of stream"); failed = true; break; }
             consumed += (uint64_t)n;
         }
@@ -461,7 +489,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
 
         if (is_cnmt) {
             // Buffer the meta NCA in RAM, then write it to NCM too.
-            if (entries[i].size > sizeof(cnmt_nca)) { fail(out, 400, "cnmt nca too large"); failed = true; break; }
+            if (entries[i].size > sizeof(g_w->cnmt_nca)) { fail(out, 400, "cnmt nca too large"); failed = true; break; }
             size_t got = 0;
             while (got < entries[i].size) {
                 n = read_fn(ctx, cnmt_nca + got, entries[i].size - got);
@@ -480,7 +508,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
             if (R_FAILED(rc)) { fail(out, 500, "write meta nca failed (0x%x)", rc); failed = true; break; }
             written[written_n].id = meta_cid; written[written_n].registered = true; written_n++;
         } else if (is_tik) {
-            if (entries[i].size > sizeof(tik_buf)) { fail(out, 400, "ticket too large"); failed = true; break; }
+            if (entries[i].size > sizeof(g_w->tik_buf)) { fail(out, 400, "ticket too large"); failed = true; break; }
             size_t got = 0;
             while (got < entries[i].size) {
                 n = read_fn(ctx, tik_buf + got, entries[i].size - got);
@@ -489,7 +517,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
             }
             tik_size = entries[i].size; consumed += tik_size;
         } else if (is_cert) {
-            if (entries[i].size > sizeof(cert_buf)) { fail(out, 400, "cert too large"); failed = true; break; }
+            if (entries[i].size > sizeof(g_w->cert_buf)) { fail(out, 400, "cert too large"); failed = true; break; }
             size_t got = 0;
             while (got < entries[i].size) {
                 n = read_fn(ctx, cert_buf + got, entries[i].size - got);
@@ -512,7 +540,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
             uint64_t skip = entries[i].size;
             while (skip > 0) {
                 size_t want = skip > INSTALL_CHUNK ? INSTALL_CHUNK : (size_t)skip;
-                n = read_fn(ctx, g_chunk, want);
+                n = read_fn(ctx, g_w->chunk, want);
                 if (n <= 0) { fail(out, 400, "truncated entry"); failed = true; break; }
                 skip -= (uint64_t)n; consumed += (uint64_t)n;
             }
@@ -524,7 +552,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     PackagedContentMetaHeader pkg = {0};
     NcmContentInfo infos[MAX_FILES];
     int infos_n = 0;
-    static u8 ext_hdr[0x80];
+    u8 *ext_hdr = g_w->ext_hdr;
     u16 ext_hdr_size = 0;
 
     if (!failed && (cnmt_nca_size == 0 || !have_meta_cid)) {
@@ -533,7 +561,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     if (!failed) {
         const char *cerr = NULL;
         if (!read_cnmt(&cs, &meta_cid, &pkg, infos, MAX_FILES,
-                       &infos_n, ext_hdr, sizeof(ext_hdr), &ext_hdr_size, &cerr)) {
+                       &infos_n, ext_hdr, sizeof(g_w->ext_hdr), &ext_hdr_size, &cerr)) {
             fail(out, 400, "cnmt: %s", cerr); failed = true;
         }
     }
@@ -551,8 +579,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
 
         // Build the install-time content-meta blob:
         //   NcmContentMetaHeader | extended header | NcmContentInfo[meta + contents]
-        static u8 meta_blob[sizeof(NcmContentMetaHeader) + sizeof(ext_hdr)
-                            + (MAX_FILES + 1) * sizeof(NcmContentInfo)];
+        u8 *meta_blob = g_w->meta_blob;
         size_t pos = 0;
 
         NcmContentMetaHeader mh = {0};
@@ -599,7 +626,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
             else if (pkg.type == NcmContentMetaType_AddOnContent) base_id = (pkg.id ^ 0x1000) & ~(u64)0xFFF;
 
             // Merge with existing records for this base id.
-            static NsExtContentStorageRecord recs[64];
+            NsExtContentStorageRecord *recs = g_w->recs;
             s32 existing = 0;
             nsext_list_application_record_content_meta(0, base_id, recs, 63, &existing);
             if (existing < 0 || existing > 63) existing = 0;
@@ -672,7 +699,7 @@ static bool skip_to(InstallReadFn read_fn, void *ctx, uint64_t target,
     while (*consumed < target) {
         uint64_t gap = target - *consumed;
         size_t want = gap > INSTALL_CHUNK ? INSTALL_CHUNK : (size_t)gap;
-        long n = read_fn(ctx, g_chunk, want);
+        long n = read_fn(ctx, g_w->chunk, want);
         if (n <= 0) return false;
         *consumed += (uint64_t)n;
     }
@@ -684,17 +711,17 @@ static bool skip_to(InstallReadFn read_fn, void *ctx, uint64_t target,
 static bool install_nsp(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
                         u8 *prefix, size_t prefix_len, uint64_t consumed,
                         InstallResult *out) {
-    static u8 hdrbuf[0x10 + MAX_FILES * 0x18 + 0x4000];
+    u8 *hdrbuf = g_w->hdrbuf;
     if (!read_exact(read_fn, ctx, hdrbuf, 0x10, prefix, &prefix_len, &consumed)) {
         fail(out, 400, "stream too short"); return false;
     }
     size_t hsize = pfs0_header_size(hdrbuf);
-    if (hsize == 0 || hsize > sizeof(hdrbuf)) { fail(out, 400, "not a valid NSP (PFS0)"); return false; }
+    if (hsize == 0 || hsize > sizeof(g_w->hdrbuf)) { fail(out, 400, "not a valid NSP (PFS0)"); return false; }
     if (!read_exact(read_fn, ctx, hdrbuf + 0x10, hsize - 0x10, prefix, &prefix_len, &consumed)) {
         fail(out, 400, "truncated PFS0 header"); return false;
     }
 
-    static Pfs0Entry pe[MAX_FILES];
+    Pfs0Entry *pe = g_w->pe;
     int file_count = 0;
     uint64_t data_start = 0;
     const char *perr = NULL;
@@ -702,7 +729,7 @@ static bool install_nsp(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
         fail(out, 400, "PFS0 parse: %s", perr); return false;
     }
 
-    static InstallEntry entries[MAX_FILES];
+    InstallEntry *entries = g_w->entries;
     for (int i = 0; i < file_count; i++) {
         memcpy(entries[i].name, pe[i].name, sizeof(entries[i].name));
         entries[i].abs_offset = data_start + pe[i].offset;
@@ -716,7 +743,7 @@ static bool install_nsp(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
 static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
                         uint64_t root_off, u8 *prefix, size_t prefix_len,
                         uint64_t consumed, InstallResult *out) {
-    static u8 hdrbuf[0x10 + MAX_FILES * 0x40 + 0x4000];
+    u8 *hdrbuf = g_w->hdrbuf;
 
     // 1. Skip to the root HFS0, read its fixed header, then the full table.
     if (!skip_to(read_fn, ctx, root_off, prefix, &prefix_len, &consumed)) {
@@ -726,12 +753,12 @@ static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
         fail(out, 400, "truncated XCI root header"); return false;
     }
     size_t rsize = hfs0_header_size(hdrbuf);
-    if (rsize == 0 || rsize > sizeof(hdrbuf)) { fail(out, 400, "not a valid XCI (root HFS0)"); return false; }
+    if (rsize == 0 || rsize > sizeof(g_w->hdrbuf)) { fail(out, 400, "not a valid XCI (root HFS0)"); return false; }
     if (!read_exact(read_fn, ctx, hdrbuf + 0x10, rsize - 0x10, prefix, &prefix_len, &consumed)) {
         fail(out, 400, "truncated XCI root table"); return false;
     }
 
-    static Hfs0Entry rparts[MAX_FILES];
+    Hfs0Entry *rparts = g_w->rparts;
     int rcount = 0;
     uint64_t rdata = 0;
     const char *herr = NULL;
@@ -761,12 +788,12 @@ static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
         fail(out, 400, "truncated secure header"); return false;
     }
     size_t ssize = hfs0_header_size(hdrbuf);
-    if (ssize == 0 || ssize > sizeof(hdrbuf)) { fail(out, 400, "bad secure HFS0"); return false; }
+    if (ssize == 0 || ssize > sizeof(g_w->hdrbuf)) { fail(out, 400, "bad secure HFS0"); return false; }
     if (!read_exact(read_fn, ctx, hdrbuf + 0x10, ssize - 0x10, prefix, &prefix_len, &consumed)) {
         fail(out, 400, "truncated secure table"); return false;
     }
 
-    static Hfs0Entry se[MAX_FILES];
+    Hfs0Entry *se = g_w->se;
     int file_count = 0;
     uint64_t sdata = 0;
     if (!hfs0_parse_header(hdrbuf, ssize, se, MAX_FILES, &file_count, &sdata, &herr)) {
@@ -777,7 +804,7 @@ static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
     uint64_t secure_data_abs = secure_abs + sdata;
     (void)secure_size;
 
-    static InstallEntry entries[MAX_FILES];
+    InstallEntry *entries = g_w->entries;
     for (int i = 0; i < file_count; i++) {
         memcpy(entries[i].name, se[i].name, sizeof(entries[i].name));
         entries[i].abs_offset = secure_data_abs + se[i].offset;
@@ -813,11 +840,17 @@ bool install_stream(InstallReadFn read_fn, void *ctx, uint64_t total_size,
     // Peek enough bytes to distinguish NSP (PFS0@0) from XCI (HEAD@0x100 or
     // @0x1100). We buffer the peeked bytes and hand them to the front-end as a
     // pre-read prefix since the stream is forward-only.
-    static u8 prefix[0x1104];
+    g_w = scratch_alloc(sizeof(*g_w));
+    if (!g_w) {
+        fail(out, 500, "out of scratch memory");
+        return false;
+    }
+
+    u8 *prefix = g_w->prefix;
     size_t prefix_len = 0;
     uint64_t consumed = 0;
-    while (prefix_len < sizeof(prefix)) {
-        long nn = read_fn(ctx, prefix + prefix_len, sizeof(prefix) - prefix_len);
+    while (prefix_len < sizeof(g_w->prefix)) {
+        long nn = read_fn(ctx, prefix + prefix_len, sizeof(g_w->prefix) - prefix_len);
         if (nn <= 0) break; // small file (e.g. tiny NSP) — detect on what we have
         prefix_len += (size_t)nn;
     }

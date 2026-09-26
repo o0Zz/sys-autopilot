@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "log.h"
+#include "scratch.h"
 
 // Storages that can hold user applications. (BuiltInSystem holds system titles,
 // which we intentionally skip.)
@@ -15,28 +16,35 @@ static const NcmStorageId kStorages[] = {
 };
 
 // Resolve a title's display name from its control data (NACP). Best-effort:
-// leaves name empty on any failure. Uses a single large static buffer
+// leaves name empty on any failure. `ctrl` is the caller's scratch buffer
 // (control data is ~0x24000 bytes: NACP + icon).
-static void resolve_name(u64 app_id, char *name, size_t namesz) {
-    static NsApplicationControlData ctrl; // ~0x24000, in BSS
+static void resolve_name(u64 app_id, char *name, size_t namesz,
+                         NsApplicationControlData *ctrl) {
     name[0] = '\0';
     u64 actual = 0;
     Result rc = nsGetApplicationControlData(NsApplicationControlSource_Storage,
-                                            app_id, &ctrl, sizeof(ctrl), &actual);
-    if (R_FAILED(rc) || actual < sizeof(ctrl.nacp))
+                                            app_id, ctrl, sizeof(*ctrl), &actual);
+    if (R_FAILED(rc) || actual < sizeof(ctrl->nacp))
         return;
     NacpLanguageEntry *le = NULL;
     // The NACP name field is fixed-size (0x200) and not guaranteed NUL-
     // terminated within our smaller buffer, so bound the copy explicitly.
-    if (R_SUCCEEDED(nsGetApplicationDesiredLanguage(&ctrl.nacp, &le)) && le)
+    if (R_SUCCEEDED(nsGetApplicationDesiredLanguage(&ctrl->nacp, &le)) && le)
         snprintf(name, namesz, "%.*s", (int)namesz - 1, le->name);
-    else if (R_SUCCEEDED(nacpGetLanguageEntry(&ctrl.nacp, &le)) && le)
+    else if (R_SUCCEEDED(nacpGetLanguageEntry(&ctrl->nacp, &le)) && le)
         snprintf(name, namesz, "%.*s", (int)namesz - 1, le->name);
 }
 
 bool titles_list(TitleInfo *titles, int max, int *out_count,
                  char *err, size_t errsz) {
     int n = 0;
+
+    NsApplicationControlData *ctrl = scratch_alloc(sizeof(*ctrl));
+    NcmApplicationContentMetaKey *keys = scratch_alloc(sizeof(*keys) * TITLES_MAX);
+    if (!ctrl || !keys) {
+        snprintf(err, errsz, "out of scratch memory");
+        return false;
+    }
 
     for (size_t s = 0; s < sizeof(kStorages) / sizeof(kStorages[0]); s++) {
         NcmContentMetaDatabase db;
@@ -45,7 +53,6 @@ bool titles_list(TitleInfo *titles, int max, int *out_count,
             continue; // storage absent (e.g. no gamecard) — skip quietly
 
         // Page through the Application content-meta keys for this storage.
-        static NcmApplicationContentMetaKey keys[TITLES_MAX];
         s32 total = 0, written = 0;
         rc = ncmContentMetaDatabaseListApplication(
             &db, &total, &written, keys, TITLES_MAX, NcmContentMetaType_Application);
@@ -60,7 +67,7 @@ bool titles_list(TitleInfo *titles, int max, int *out_count,
             t->title_id = keys[i].application_id;
             t->version = keys[i].key.version;
             t->storage_id = (u8)kStorages[s];
-            resolve_name(t->title_id, t->name, sizeof(t->name));
+            resolve_name(t->title_id, t->name, sizeof(t->name), ctrl);
             n++;
         }
 

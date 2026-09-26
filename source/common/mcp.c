@@ -10,6 +10,7 @@
 #include "process.h"
 #include "jstream.h"
 #include "routes.h"
+#include "scratch.h"
 #include "screen.h"
 #include "settings.h"
 #include "titles.h"
@@ -784,23 +785,28 @@ static void tool_airplane_mode(HttpRequest *req, const char *id) {
 }
 
 static void tool_list_titles(HttpRequest *req, const char *id) {
-    static TitleInfo titles[TITLES_MAX];
+    enum { TEXT_SIZE = TITLES_MAX * 128 + 64 };
+    TitleInfo *titles = scratch_alloc(sizeof(*titles) * TITLES_MAX);
+    char *text = scratch_alloc(TEXT_SIZE);
+    if (!titles || !text) {
+        send_tool_error(req->fd, id, "out of scratch memory");
+        return;
+    }
     int count = 0;
     char err[128] = {0};
     if (!titles_list(titles, TITLES_MAX, &count, err, sizeof(err))) {
         send_tool_error(req->fd, id, err[0] ? err : "failed to list titles");
         return;
     }
-    static char text[TITLES_MAX * 128 + 64];
     size_t pos = 0;
     if (count == 0)
-        pos += (size_t)snprintf(text, sizeof(text), "(no titles installed)");
-    for (int i = 0; i < count && pos < sizeof(text) - 128; i++) {
+        pos += (size_t)snprintf(text, TEXT_SIZE, "(no titles installed)");
+    for (int i = 0; i < count && pos < TEXT_SIZE - 128; i++) {
         const char *storage =
             titles[i].storage_id == 5 ? "sd" :
             titles[i].storage_id == 4 ? "nand" :
             titles[i].storage_id == 2 ? "gamecard" : "other";
-        pos += (size_t)snprintf(text + pos, sizeof(text) - pos,
+        pos += (size_t)snprintf(text + pos, TEXT_SIZE - pos,
             "%s%016llx  v%-6u  %-8s  %s", i ? "\n" : "",
             (unsigned long long)titles[i].title_id, titles[i].version, storage,
             titles[i].name[0] ? titles[i].name : "(name unavailable)");
@@ -845,7 +851,7 @@ static void tool_set_dns(HttpRequest *req, const char *id,
         send_tool_error(req->fd, id, err);
         return;
     }
-    char text[128];
+    char text[192];
     if (automatic)
         snprintf(text, sizeof(text), "DNS set to automatic (DHCP)");
     else
@@ -1155,7 +1161,11 @@ static void handle_tools_call(HttpRequest *req, const char *id, const JsonDoc *d
 void mcp_handle_post(HttpRequest *req) {
     static char doc_buf[MCP_DOC_MAX];
     static char chunk[0x8000];
-    static JsonDoc doc;
+    JsonDoc *doc = json_shared_doc();
+
+    // routes_handle already did this; repeated so the handler stands alone
+    // (the host tests drive it directly).
+    scratch_reset();
 
     if (!req->has_content_length) {
         http_send_error(req->fd, 411, "Content-Length required");
@@ -1187,8 +1197,8 @@ void mcp_handle_post(HttpRequest *req) {
         return;
     }
 
-    if (json_parse(&doc, doc_buf, js.doc_len) != 0 || doc.ntok < 1 ||
-        doc.tok[0].type != JSMN_OBJECT) {
+    if (json_parse(doc, doc_buf, js.doc_len) != 0 || doc->ntok < 1 ||
+        doc->tok[0].type != JSMN_OBJECT) {
         upload_cleanup();
         send_rpc_error(req->fd, "null", -32700, "parse error");
         return;
@@ -1197,19 +1207,19 @@ void mcp_handle_post(HttpRequest *req) {
     // id: echoed verbatim (number or string); absent => notification.
     char id[80] = "null";
     bool has_id = false;
-    int id_tok = json_obj_get(&doc, 0, "id");
-    if (id_tok >= 0 && json_raw(&doc, id_tok, id, sizeof(id)))
+    int id_tok = json_obj_get(doc, 0, "id");
+    if (id_tok >= 0 && json_raw(doc, id_tok, id, sizeof(id)))
         has_id = true;
 
     char method[48] = "";
-    int mtok = json_obj_get(&doc, 0, "method");
-    if (mtok < 0 || !json_get_string(&doc, mtok, method, sizeof(method))) {
+    int mtok = json_obj_get(doc, 0, "method");
+    if (mtok < 0 || !json_get_string(doc, mtok, method, sizeof(method))) {
         upload_cleanup();
         send_rpc_error(req->fd, id, -32600, "missing method");
         return;
     }
 
-    int params = json_obj_get(&doc, 0, "params"); // may be -1
+    int params = json_obj_get(doc, 0, "params"); // may be -1
 
     LOGF("mcp: %s\n", method);
 
@@ -1221,7 +1231,7 @@ void mcp_handle_post(HttpRequest *req) {
     }
 
     if (strcmp(method, "initialize") == 0) {
-        handle_initialize(req, id, &doc, params);
+        handle_initialize(req, id, doc, params);
     } else if (strcmp(method, "ping") == 0) {
         send_rpc_value(req->fd, id, "result", "{}", 2);
     } else if (strcmp(method, "tools/list") == 0) {
@@ -1230,7 +1240,7 @@ void mcp_handle_post(HttpRequest *req) {
         if (params < 0)
             send_rpc_error(req->fd, id, -32602, "missing params");
         else
-            handle_tools_call(req, id, &doc, params, content_streamed);
+            handle_tools_call(req, id, doc, params, content_streamed);
     } else {
         send_rpc_error(req->fd, id, -32601, "method not found");
     }

@@ -19,7 +19,11 @@ static int fqdn(char *buf, size_t cap, const MdnsConfig *cfg) {
 // "auth" TXT value reflecting the configured authentication scheme.
 static const char *auth_kind(const Config *app_cfg) {
     if (app_cfg->username[0] != '\0' && app_cfg->password[0] != '\0')
+#ifdef AUTOPILOT_NO_MCP
+        return "basic";
+#else
         return "oauth"; // basic + OAuth browser flow available
+#endif
     if (app_cfg->token[0] != '\0')
         return "token";
     return "none";
@@ -48,7 +52,9 @@ static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
     const char *pairs[10];
     int n = 0;
     pairs[n++] = version;
+#ifndef AUTOPILOT_NO_MCP
     pairs[n++] = "path=/mcp";
+#endif
     char auth[32];
     snprintf(auth, sizeof(auth), "auth=%s", auth_kind(app_cfg));
     pairs[n++] = auth;

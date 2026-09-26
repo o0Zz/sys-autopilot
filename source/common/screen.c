@@ -1,21 +1,27 @@
 #include "screen.h"
 #include "log.h"
+#include "scratch.h"
 
 #include <string.h>
 
 #define CAPTURE_TIMEOUT_NS 100000000ULL // 100ms
 
-static u8 g_jpeg_buf[CAPSSC_JPEG_BUFFER_SIZE];
+_Static_assert(CAPSSC_JPEG_BUFFER_SIZE <= SCRATCH_SIZE, "JPEG buffer exceeds scratch arena");
 
 Result screen_capture_jpeg(ViLayerStack stack, const u8 **out_buf, u64 *out_size) {
+    u8 *buf = scratch_alloc(CAPSSC_JPEG_BUFFER_SIZE);
+    if (!buf) {
+        LOGF("screen: scratch arena exhausted\n");
+        return MAKERESULT(Module_Libnx, LibnxError_OutOfMemory);
+    }
     u64 size = 0;
-    Result rc = capsscCaptureJpegScreenShot(&size, g_jpeg_buf, sizeof(g_jpeg_buf),
+    Result rc = capsscCaptureJpegScreenShot(&size, buf, CAPSSC_JPEG_BUFFER_SIZE,
                                             stack, CAPTURE_TIMEOUT_NS);
     if (R_FAILED(rc)) {
         LOGF("screen: capture failed rc=0x%x\n", rc);
         return rc;
     }
-    *out_buf = g_jpeg_buf;
+    *out_buf = buf;
     *out_size = size;
     return 0;
 }

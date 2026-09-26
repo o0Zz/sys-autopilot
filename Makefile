@@ -35,6 +35,16 @@ ifneq ($(strip $(APP_VERSION)),)
 DEFINES	+=	-DAPP_VERSION=\"$(APP_VERSION)\"
 endif
 
+# MCP=0 leaves out the MCP endpoint and the OAuth flow that exists for MCP
+# clients (mcp.c, oauth.c, jstream.c), for a smaller binary and less resident
+# memory when only the REST API is used. Bearer auth then accepts only the
+# `token` from config.ini. Run `make clean` when switching.
+MCP ?= 1
+ifeq ($(MCP),0)
+DEFINES	+=	-DAUTOPILOT_NO_MCP
+MCP_ONLY_FILES	:=	mcp.c oauth.c jstream.c
+endif
+
 # The sysmodule has no stdout, so LOGF() is routed to a log file on the SD
 # card. Compiled in unconditionally but gated at runtime by the `log` key in
 # config.ini (see log.{c,h}); disabled by default, so this is free when off.
@@ -45,7 +55,7 @@ DEFINES	+=	-DLOG_TO_FILE
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	-g -Wall -O2 -ffunction-sections \
+CFLAGS	:=	-g -Wall -Os -ffunction-sections -fdata-sections \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__
@@ -53,7 +63,28 @@ CFLAGS	+=	$(INCLUDE) -D__SWITCH__
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 
 ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+# Nothing here unwinds (plain C, no exceptions), so the libraries' .eh_frame
+# is dead weight. The discard script only wins if it precedes switch.ld, which
+# only a specs file listed before switch.specs achieves. Both are written into
+# $(BUILD) at link time (see below); the link runs there, so the relative
+# paths resolve.
+define DISCARD_EHFRAME_LD
+SECTIONS
+{
+    /DISCARD/ : { EXCLUDE_FILE(*crtbegin.o) *(.eh_frame_hdr .eh_frame) }
+}
+endef
+
+define DISCARD_EHFRAME_SPECS
+%rename link pre_old_link
+
+*link:
+%(pre_old_link) -T discard-ehframe.ld
+endef
+
+export DISCARD_EHFRAME_LD DISCARD_EHFRAME_SPECS
+
+LDFLAGS	=	-specs=discard-ehframe.specs -specs=$(DEVKITPRO)/libnx/switch.specs 			-g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:= -lnx
 
@@ -79,7 +110,7 @@ export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 
 export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
-CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CFILES		:=	$(filter-out $(MCP_ONLY_FILES),$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))))
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
@@ -146,7 +177,13 @@ $(OUTPUT).nsp	:	$(OUTPUT).nso $(OUTPUT).npdm
 
 $(OUTPUT).nso	:	$(OUTPUT).elf
 
-$(OUTPUT).elf	:	$(OFILES)
+$(OUTPUT).elf	:	$(OFILES) discard-ehframe.ld discard-ehframe.specs
+
+discard-ehframe.ld:
+	@printf '%s\n' "$$DISCARD_EHFRAME_LD" > $@
+
+discard-ehframe.specs:
+	@printf '%s\n' "$$DISCARD_EHFRAME_SPECS" > $@
 
 $(OFILES_SRC)	: $(HFILES_BIN)
 

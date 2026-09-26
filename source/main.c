@@ -8,7 +8,9 @@
 #include "common/install.h"
 #include "common/log.h"
 #include "common/netif.h"
+#ifndef AUTOPILOT_NO_MCP
 #include "common/oauth.h"
+#endif
 #include "common/power.h"
 #include "common/process.h"
 #include "common/routes.h"
@@ -17,7 +19,9 @@
 
 // Inner heap: socket transfer memory + stdio buffers + dir listing JSON +
 // headroom for the title installer (ncm IPC, mounting the cnmt NCA). The large
-// fixed buffers (JPEG, I/O, HDLS workmem, install chunk) are static bss.
+// transient buffers (JPEG, I/O, installer, title listing) share the static
+// scratch arena (common/scratch.c); GET /status reports how much of this heap
+// is actually used.
 #define INNER_HEAP_SIZE 0x100000
 
 #ifdef __cplusplus
@@ -189,8 +193,10 @@ int main(int argc, char* argv[])
     // opened.
     routes_set_keep_awake(cfg.keep_awake && power_keepawake_available());
 
+#ifndef AUTOPILOT_NO_MCP
     // OAuth state (config reference + persisted token list).
     oauth_init(&cfg);
+#endif
 
     // Blocks forever (NULL idle callback).
     server_run(&cfg, NULL);

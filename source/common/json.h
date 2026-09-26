@@ -16,6 +16,11 @@ typedef struct {
     int ntok;
 } JsonDoc;
 
+// The one token buffer every request handler parses into. A JsonDoc is
+// ~16K; the server handles one request at a time, so sharing one instead of
+// a static per handler saves that much per handler.
+JsonDoc *json_shared_doc(void);
+
 // Parses src (len bytes). Returns 0 on success, negative jsmn error otherwise.
 int json_parse(JsonDoc *doc, const char *src, size_t len);
 

@@ -1,6 +1,7 @@
 #include "files.h"
 #include "json.h"
 #include "log.h"
+#include "scratch.h"
 #include "sha256.h"
 
 #include <stdio.h>
@@ -11,9 +12,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define IO_BUF_SIZE 0x8000 // 32 KB
-
-static char g_io_buf[IO_BUF_SIZE];
+#define IO_BUF_SIZE 0x8000 // 32 KB, taken from the request scratch arena
 
 bool files_resolve(const char *userpath, char *out, size_t outsz, const char **err) {
     if (userpath == NULL || userpath[0] == '\0') {
@@ -226,8 +225,16 @@ bool files_hash_sha256(const char *fspath, char out_hex[65], long long *out_size
         return false;
     }
 
+    size_t mark = scratch_mark();
+    char *buf = scratch_alloc(IO_BUF_SIZE);
+    if (!buf) {
+        *err = "out of scratch memory";
+        return false;
+    }
+
     FILE *f = fopen(fspath, "rb");
     if (!f) {
+        scratch_release(mark);
         *err = "open failed";
         return false;
     }
@@ -237,12 +244,13 @@ bool files_hash_sha256(const char *fspath, char out_hex[65], long long *out_size
 
     long long total = 0;
     size_t n;
-    while ((n = fread(g_io_buf, 1, IO_BUF_SIZE, f)) > 0) {
-        sha256_stream_update(&sha, g_io_buf, n);
+    while ((n = fread(buf, 1, IO_BUF_SIZE, f)) > 0) {
+        sha256_stream_update(&sha, buf, n);
         total += (long long)n;
     }
     bool read_err = ferror(f) != 0;
     fclose(f);
+    scratch_release(mark);
     if (read_err) {
         *err = "read failed";
         return false;
@@ -285,6 +293,12 @@ static void send_file(HttpRequest *req, const char *fspath, const struct stat *s
     if (length < 0 || length > avail)
         length = avail;
 
+    char *buf = scratch_alloc(IO_BUF_SIZE);
+    if (!buf) {
+        http_send_error(req->fd, 500, "out of scratch memory");
+        return;
+    }
+
     FILE *f = fopen(fspath, "rb");
     if (!f) {
         http_send_error(req->fd, 404, "file not found");
@@ -301,10 +315,10 @@ static void send_file(HttpRequest *req, const char *fspath, const struct stat *s
     long long remaining = length;
     while (remaining > 0) {
         size_t chunk = remaining > IO_BUF_SIZE ? IO_BUF_SIZE : (size_t)remaining;
-        size_t n = fread(g_io_buf, 1, chunk, f);
+        size_t n = fread(buf, 1, chunk, f);
         if (n == 0)
             break;
-        if (!http_write_all(req->fd, g_io_buf, n))
+        if (!http_write_all(req->fd, buf, n))
             break;
         remaining -= (long long)n;
     }
@@ -377,6 +391,12 @@ void files_handle_put(HttpRequest *req) {
         return;
     }
 
+    char *buf = scratch_alloc(IO_BUF_SIZE);
+    if (!buf) {
+        http_send_error(req->fd, 500, "out of scratch memory");
+        return;
+    }
+
     files_mkdirs_for(fspath);
 
     FILE *f = fopen(fspath, "wb");
@@ -388,10 +408,10 @@ void files_handle_put(HttpRequest *req) {
     size_t total = 0;
     bool write_err = false;
     while (total < req->content_length) {
-        ssize_t n = http_read_body(req, g_io_buf, IO_BUF_SIZE);
+        ssize_t n = http_read_body(req, buf, IO_BUF_SIZE);
         if (n <= 0)
             break;
-        if (fwrite(g_io_buf, 1, (size_t)n, f) != (size_t)n) {
+        if (fwrite(buf, 1, (size_t)n, f) != (size_t)n) {
             write_err = true;
             break;
         }
