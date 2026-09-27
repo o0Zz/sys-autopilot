@@ -1,5 +1,176 @@
 # sys-autopilot
 
+## 1.6.0
+
+### Minor Changes
+
+- [`e4e6cc7`](https://github.com/TooTallNate/sys-autopilot/commit/e4e6cc7683b871ccf12ee77d9670e3457b614918) Thanks [@o0Zz](https://github.com/o0Zz)! - Serve a built-in file explorer: `GET /` redirects to `/explorer`, a single
+  self-contained page that browses the SD card and edits text files in place
+  (upload, download, delete, and a live tail for logs) by calling the existing
+  `/files` endpoints same-origin. The 401 challenge now offers Basic before
+  Bearer so browsers show their login prompt when `username`/`password` are set.
+
+- [`d1c1458`](https://github.com/TooTallNate/sys-autopilot/commit/d1c145820c771edbfe31d480cdf069e86cee897c) Thanks [@o0Zz](https://github.com/o0Zz)! - Add `POST /files/move?path=<src>&to=<dst>` to rename or move a file or
+  directory on the SD card (parent directories are created, an existing
+  destination is never overwritten), and a **Rename** button in the file
+  explorer that uses it.
+
+- [`433b5ef`](https://github.com/TooTallNate/sys-autopilot/commit/433b5ef3ba482e6483897c550286b81cd1893b2f) Thanks [@o0Zz](https://github.com/o0Zz)! - Hold off auto-sleep while the sysmodule runs. Sleep powers down the WLAN
+  module, so the console stopped answering a few minutes after boot and only a
+  physical button press brought it back — which made unattended remote driving
+  impossible.
+
+  The server pings `idle:sys` (`ReportUserIsActive`) every 5 seconds — plus
+  once at startup and again on every wake — which resets the console's idle
+  counter. The interval has to beat the shortest idle policy the system applies,
+  not the shortest sleep plan offered in System Settings (1 minute): the lock
+  screen (“press A three times”, shown after boot and after each wake) idles out
+  in about 10 seconds. Nothing is persisted: the System Settings sleep plan is
+  left untouched, so stopping the sysmodule restores normal behaviour
+  immediately. An explicit sleep — the power button, or the
+  `sleep` tool — still works.
+
+  Controlled by a new `[power] keep_awake` setting in `config.ini`, on by
+  default, and reported as `keepAwake` by `GET /status` (false when the setting
+  is off _or_ the `idle:sys` session could not be opened).
+
+  Requires the `idle:sys` service, now added to the NPDM.
+
+- [`196d511`](https://github.com/TooTallNate/sys-autopilot/commit/196d51168f941dd09914db42dbc08e57f813eadf) Thanks [@o0Zz](https://github.com/o0Zz)! - Expose file move/rename as the `move_file` MCP tool. `POST /files/move`
+  already existed on the REST side, but no tool wrapped it, so an agent could
+  list, read, upload, hash and delete files yet had to drop out of MCP to
+  rename one. Same semantics as the endpoint: destination parents are created,
+  an existing destination is never overwritten, and moving a path onto itself
+  is a no-op.
+
+- [`17db817`](https://github.com/TooTallNate/sys-autopilot/commit/17db817a84e6c2240287d7b9a3a1ab830fafa69b) Thanks [@o0Zz](https://github.com/o0Zz)! - Cut the sysmodule's resident memory by about 850 KB, leaving more for the rest
+  of the system.
+
+  The large buffers that each feature kept as its own static array (screenshot
+  JPEG, title installer, title listing, file I/O) now share one request-scoped
+  arena, so only the largest of them is resident instead of all of them at
+  once. The fourteen per-handler JSON token buffers (16 KB each) are now one.
+  The build also uses `-Os`, drops unreferenced data, and discards the
+  libraries' unused `.eh_frame` unwind tables (~40 KB; nothing here unwinds).
+
+  New `make MCP=0` build option leaves out the MCP endpoint and its OAuth
+  browser login for REST-only setups, saving about another 100 KB of code and
+  120 KB of RAM. With it, Bearer auth accepts only the `token` from
+  `config.ini`.
+
+  `GET /status` now reports `heapSizeBytes`, `heapArenaBytes` and
+  `heapUsedBytes`, so the heap size can be tuned from real numbers.
+
+- [#22](https://github.com/TooTallNate/sys-autopilot/pull/22) [`9d8a105`](https://github.com/TooTallNate/sys-autopilot/commit/9d8a105e8371a8ea52cb9153e8886340ae36cf8b) Thanks [@TooTallNate](https://github.com/TooTallNate)! - Add DNS configuration for the active network connection. `GET /network/dns`
+  reads the current config (automatic/manual + primary/secondary servers) and
+  `POST /network/dns` sets manual DNS servers or reverts to DHCP — handy for
+  pointing the console at a custom/black-hole DNS while keeping it on the LAN.
+  Also exposed as the `get_dns` / `set_dns` MCP tools.
+
+  Setting the profile requires the `nifm:a` admin service. Because libnx's
+  `nifmInitialize` is refcounted and ignores the service type after the first
+  call, the sysmodule now opens nifm as Admin at boot (a superset of the User
+  session used for mDNS) so the profile write is authorized.
+
+- [`9dd30fd`](https://github.com/TooTallNate/sys-autopilot/commit/9dd30fd66f7482eb016885083b7a34e17b55d830) Thanks [@o0Zz](https://github.com/o0Zz)! - Add process control: start, stop, restart and query any program by title id.
+  `GET /process?titleId=...` reports whether it is running (and its pid), and
+  `POST /process/{start,stop,restart}` drive it. Also exposed as the
+  `process_status` / `process_start` / `process_stop` / `process_restart` MCP
+  tools.
+
+  This is aimed at iterating on a sysmodule without rebooting: stop it, upload
+  the rebuilt `exefs.nsp` through `/files`, start it again. Because a program
+  does not need a `flags/boot2.flag` to be launched this way, a sysmodule under
+  development can be kept out of the boot sequence entirely — a build that
+  crashes on startup then no longer takes the console down before anything is
+  reachable, which is otherwise the failure that forces pulling the SD card.
+
+  `restart` waits for the terminated process to actually disappear before
+  relaunching, so callers never race a half-dead process.
+
+  Requires the `pm:shell` and `pm:dmnt` services, now added to the NPDM.
+
+- [`b221dfc`](https://github.com/TooTallNate/sys-autopilot/commit/b221dfce83a5549a71b25d75561972eec6406f21) Thanks [@o0Zz](https://github.com/o0Zz)! - Add touch screen input: `POST /input/touch` taps a pixel coordinate and
+  `POST /input/swipe` drags between two, exposed as the `tap_screen` and
+  `swipe_screen` MCP tools. Coordinates are in the panel's 1280x720 space —
+  the same space as the JPEG `/screenshot` returns — so an agent can read a
+  target off the screenshot it is already looking at and touch it, with no
+  coordinate mapping in between.
+
+  This does not go through HDLS: `hiddbg` replays the state into hid's own
+  touch sampler, so it needs neither the work buffer nor the virtual
+  controller, and a physical controller can stay connected. The state is
+  latched (hid re-reports the last one every sampling frame), so a gesture is
+  driven frame by frame at ~60Hz and always ends by reporting "no finger" and
+  unsetting, which hands the panel back to the player — including on the sleep
+  path, where a latched touch would otherwise survive the transition.
+
+  Swipes are interpolated over `durationMs` rather than teleported, which is
+  what makes scroll and flick handlers react at all.
+
+  Touch only reaches applications in handheld mode: docked, the panel is off
+  and the console ignores injected touch exactly as it ignores a finger.
+
+### Patch Changes
+
+- [`b221dfc`](https://github.com/TooTallNate/sys-autopilot/commit/b221dfce83a5549a71b25d75561972eec6406f21) Thanks [@o0Zz](https://github.com/o0Zz)! - Explorer: keep the current directory (and open file) in the location hash, so
+  F5 / Ctrl+R comes back where you were instead of the root, back/forward walk
+  the browsing history, and the address bar can be bookmarked or shared. A hash
+  pointing at something that is gone falls back to `/`.
+
+- [`0acecfd`](https://github.com/TooTallNate/sys-autopilot/commit/0acecfd8c6fcbb6ae4a2f1a24915b42feeda6f9c) Thanks [@o0Zz](https://github.com/o0Zz)! - Explorer: add a Reboot button (with confirmation) that calls `POST /power/restart`,
+  and save the open file with Ctrl+S / Cmd+S.
+
+- [#25](https://github.com/TooTallNate/sys-autopilot/pull/25) [`51a249c`](https://github.com/TooTallNate/sys-autopilot/commit/51a249ca27be371020aaec1d2d1b0590e7cb3de3) Thanks [@TooTallNate](https://github.com/TooTallNate)! - Support HTTP/1.1 keep-alive so MCP clients can reuse one connection across
+  initialize → notifications/initialized → tools/list. Responses previously
+  forced `Connection: close`, which made the Streamable HTTP transport's reused
+  socket get reset ("socket connection closed unexpectedly"). The server now
+  keeps the connection alive when the client speaks HTTP/1.1, drains the request
+  body between requests, and half-closes cleanly to avoid RSTs. `GET /mcp`
+  returns 405 (no server-initiated SSE stream offered), the spec-sanctioned way
+  to decline the optional channel.
+
+- [`b221dfc`](https://github.com/TooTallNate/sys-autopilot/commit/b221dfce83a5549a71b25d75561972eec6406f21) Thanks [@o0Zz](https://github.com/o0Zz)! - Stop resetting reused keep-alive connections. Responses advertised
+  `Keep-Alive: timeout=10` while the server dropped an idle connection after
+  50ms, so a browser reloading the explorer (Ctrl+R) wrote its request into a
+  socket we had already closed; `close()` with those bytes still queued sends an
+  RST, which surfaced as a connection reset before the retry succeeded. The
+  advertised timeout now matches what the server actually does, and connections
+  are closed by half-closing and draining first, so the peer always sees a clean
+  end of connection it can silently retry.
+
+- [#24](https://github.com/TooTallNate/sys-autopilot/pull/24) [`b524891`](https://github.com/TooTallNate/sys-autopilot/commit/b52489188a4f013e61e910d12cb318f60466ee73) Thanks [@TooTallNate](https://github.com/TooTallNate)! - Fix ~5s latency on every request when reaching the console by its `.local`
+  hostname. The mDNS responder answered A queries but stayed silent for AAAA, so
+  dual-stack resolvers (macOS `getaddrinfo`, used by curl/ping and MCP clients)
+  blocked ~5s waiting on a nonexistent AAAA before falling back to IPv4. The A
+  record and the announcement now carry an NSEC record asserting "A only, no
+  AAAA" per RFC 6762 §6.1, so resolvers proceed immediately.
+
+- [`fdf0188`](https://github.com/TooTallNate/sys-autopilot/commit/fdf018899f14bc39e460a94320b242ec1d060ab6) Thanks [@o0Zz](https://github.com/o0Zz)! - Fix the connection resets that made the server look unreachable at random.
+  Clients saw "connection forcibly closed", the explorer reset on reload, and
+  REST tools failed with WinError 10054 whenever anything else was talking to
+  the console.
+
+  The socket buffer pool bsd allocates is `sb_efficiency * (tcp_tx + tcp_rx +
+udp_tx + udp_rx)`, and every socket draws from it, including ones merely
+  waiting in the listen backlog and ones sitting in TIME_WAIT. At
+  `sb_efficiency = 2` the pool held the listener plus exactly one connection, so
+  the second concurrent client was accepted by the stack and then immediately
+  reset - and browsers open several connections per page load. Smaller
+  per-socket buffers now buy ten slots for roughly the same memory.
+
+  The server also closed every connection itself, so each one left the console
+  holding TIME_WAIT and a burst of requests exhausted the pool anyway.
+  `close_client()` now drains first and lets the peer hang up, which makes the
+  console the passive closer; responses all carry a Content-Length, so clients
+  close on their own within a millisecond or two. A peer that connects and then
+  sends nothing is dropped after a second instead of occupying the
+  single-threaded server for the full 10s I/O timeout.
+
+  Measured on hardware: concurrent connections 1 -> 8, and 60 rapid sequential
+  requests, 4 rounds of 6 parallel requests, and 5 req/s sustained all complete
+  with zero failures where the first burst previously died at request 14.
+
 ## 1.5.0
 
 ### Minor Changes
