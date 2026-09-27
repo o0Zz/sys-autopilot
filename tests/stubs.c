@@ -1,12 +1,12 @@
-// Host-side stubs for the Switch-coupled modules (input, screen, routes
-// metadata) so mcp.c can be exercised end-to-end in tests.
+// Host-side stubs for the Switch-coupled modules (input, screen, app
+// metadata) so the MCP tools can be exercised end-to-end in tests.
 #include <switch.h>
 #include <string.h>
 #include <strings.h>
 
-#include "input.h"
-#include "screen.h"
-#include "routes.h"
+#include "features/input/input.h"
+#include "features/screen/screen.h"
+#include "core/app.h"
 
 u64 stub_tap_mask;
 int stub_tap_duration;
@@ -65,9 +65,11 @@ Result input_touch_swipe(int from_x, int from_y, int to_x, int to_y,
 
 static const u8 kFakeJpeg[] = "FAKEJPEGDATA";
 
-Result screen_capture_jpeg(ViLayerStack stack, const u8 **out_buf, u64 *out_size) {
+Result screen_capture_jpeg(ViLayerStack stack, u8 *buf, size_t buf_size, u64 *out_size) {
     (void)stack;
-    *out_buf = kFakeJpeg;
+    if (buf_size < sizeof(kFakeJpeg) - 1)
+        return 1;
+    memcpy(buf, kFakeJpeg, sizeof(kFakeJpeg) - 1);
     *out_size = sizeof(kFakeJpeg) - 1;
     return 0;
 }
@@ -82,5 +84,5 @@ bool screen_parse_stack(const char *name, ViLayerStack *out) {
     return true;
 }
 
-const char *routes_app_version(void) { return "test"; }
-uint64_t routes_uptime_seconds(void) { return 42; }
+const char *app_version(void) { return "test"; }
+uint64_t app_uptime_seconds(void) { return 42; }

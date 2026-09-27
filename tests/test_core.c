@@ -5,12 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "apiargs.h"
-#include "base64.h"
-#include "buttons.h"
-#include "json.h"
-#include "jstream.h"
-#include "sha256.h"
+#include "features/input/input_args.h"
+#include "util/base64.h"
+#include "features/input/buttons.h"
+#include "util/json.h"
+#include "features/mcp/jstream.h"
+#include "util/sha256.h"
 
 // --- base64 -------------------------------------------------------------------
 

@@ -15,9 +15,13 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	sys-autopilot-app
 BUILD		:=	build
-SOURCES		:=	source ../source/common
 DATA		:=	data
 INCLUDES	:=	../source ../lib/jsmn
+
+# Every feature, MCP included (see ../Makefile for what they are).
+FEATURES	:=	explorer install network power process titles mcp
+SOURCES		:=	source ../source/core ../source/util ../source/platform ../source/features \
+			$(addprefix ../source/features/,status screen input files settings oauth $(FEATURES))
 
 APP_TITLE	:=	sys-autopilot
 APP_AUTHOR	:=	TooTallNate
@@ -31,6 +35,7 @@ APP_VERSION	:=	$(shell sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' $(TOPDIR)/../
 ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
 DEFINES	:=	-DENABLE_LOG
+DEFINES	+=	$(foreach f,$(FEATURES),-DFEATURE_$(shell echo $(f) | tr a-z A-Z))
 ifneq ($(strip $(APP_VERSION)),)
 DEFINES	+=	-DAPP_VERSION=\"$(APP_VERSION)\"
 endif

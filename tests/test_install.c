@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "install.h"
+#include "features/install/install.h"
 
 static void w32(uint8_t *p, uint32_t v) {
     p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24;

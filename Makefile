@@ -22,9 +22,34 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	sys-autopilot
 BUILD		:=	build
-SOURCES		:=	source source/common
 DATA		:=	data
-INCLUDES	:=	include lib/jsmn
+INCLUDES	:=	include lib/jsmn source
+
+# Features (source/features/<name>/). The first five are always built; the
+# optional ones are chosen here, e.g. `make FEATURES="explorer power"` for a
+# smaller build. source/features/feature_list.c registers whatever is compiled
+# in, keyed on the FEATURE_<NAME> define each one gets. Run `make clean` when
+# changing it.
+BASE_FEATURES	:=	status screen input files settings
+FEATURES	?=	explorer install network power process titles
+
+# MCP=0 leaves out the MCP endpoint, the OAuth login that exists for MCP
+# clients, and every feature's *_mcp.c, for a smaller binary and less resident
+# memory when only the REST API is used. Bearer auth then accepts only the
+# `token` from config.ini. Run `make clean` when switching.
+MCP ?= 1
+ifeq ($(MCP),0)
+MCP_FEATURES	:=
+EXCLUDED_FILES	:=	%_mcp.c
+else
+MCP_FEATURES	:=	mcp oauth
+EXCLUDED_FILES	:=
+endif
+
+BUILT_FEATURES	:=	$(BASE_FEATURES) $(FEATURES) $(MCP_FEATURES)
+SOURCES		:=	source source/core source/util source/platform source/features \
+			$(addprefix source/features/,$(BUILT_FEATURES))
+DEFINES	+=	$(foreach f,$(FEATURES) $(MCP_FEATURES),-DFEATURE_$(shell echo $(f) | tr a-z A-Z))
 
 # Atmosphere program (title) ID for this sysmodule.
 export TITLE_ID	:=	4200000000004150
@@ -33,16 +58,6 @@ export TITLE_ID	:=	4200000000004150
 export APP_VERSION	:=	$(shell sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' $(TOPDIR)/package.json)
 ifneq ($(strip $(APP_VERSION)),)
 DEFINES	+=	-DAPP_VERSION=\"$(APP_VERSION)\"
-endif
-
-# MCP=0 leaves out the MCP endpoint and the OAuth flow that exists for MCP
-# clients (mcp.c, oauth.c, jstream.c), for a smaller binary and less resident
-# memory when only the REST API is used. Bearer auth then accepts only the
-# `token` from config.ini. Run `make clean` when switching.
-MCP ?= 1
-ifeq ($(MCP),0)
-DEFINES	+=	-DAUTOPILOT_NO_MCP
-MCP_ONLY_FILES	:=	mcp.c oauth.c jstream.c
 endif
 
 # The sysmodule has no stdout, so LOGF() is routed to a log file on the SD
@@ -110,7 +125,7 @@ export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 
 export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
-CFILES		:=	$(filter-out $(MCP_ONLY_FILES),$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))))
+CFILES		:=	$(filter-out $(EXCLUDED_FILES),$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))))
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
@@ -172,6 +187,7 @@ DEPENDS	:=	$(OFILES:.o=.d)
 # main targets
 #---------------------------------------------------------------------------------
 all	:	$(OUTPUT).nsp
+	@sh $(TOPDIR)/scripts/check_static_buffers.sh $(OUTPUT).elf
 
 $(OUTPUT).nsp	:	$(OUTPUT).nso $(OUTPUT).npdm
 

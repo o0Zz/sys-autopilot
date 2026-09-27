@@ -9,19 +9,19 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#include "base64.h"
-#include "config.h"
-#include "http.h"
-#include "oauth.h"
-#include "sha256.h"
+#include "util/base64.h"
+#include "core/config.h"
+#include "core/http.h"
+#include "core/http_server.h"
+#include "features/oauth/oauth.h"
+#include "util/sha256.h"
 
 static Config g_test_cfg;
 
-// Sends one HTTP request through a socketpair to `handler`; returns the raw
-// response in a static buffer.
-typedef void (*Handler)(HttpRequest *req);
-
-static const char *do_req(Handler handler, const char *method, const char *target,
+// Sends one HTTP request through a socketpair to the router (with the routes
+// oauth_http_register() installed); returns the raw response in a static
+// buffer.
+static const char *do_req(const char *method, const char *target,
                           const char *host, const char *body) {
     static char resp[64 * 1024];
     int sv[2];
@@ -50,7 +50,7 @@ static const char *do_req(Handler handler, const char *method, const char *targe
 
     static HttpRequest hreq;
     assert(http_read_request(sv[0], &hreq));
-    handler(&hreq);
+    http_server_dispatch(&g_test_cfg, &hreq);
     close(sv[0]);
 
     size_t total = 0;
@@ -93,14 +93,14 @@ static void test_sha256_vectors(void) {
 }
 
 static void test_discovery(void) {
-    const char *r = do_req(oauth_handle_protected_resource, "GET",
+    const char *r = do_req("GET",
                            "/.well-known/oauth-protected-resource",
                            "10.0.0.5:4150", NULL);
     assert(strstr(r, "HTTP/1.1 200"));
     assert(strstr(r, "\"resource\":\"http://10.0.0.5:4150/mcp\""));
     assert(strstr(r, "\"authorization_servers\":[\"http://10.0.0.5:4150\"]"));
 
-    r = do_req(oauth_handle_as_metadata, "GET",
+    r = do_req("GET",
                "/.well-known/oauth-authorization-server", "10.0.0.5:4150", NULL);
     assert(strstr(r, "\"authorization_endpoint\":\"http://10.0.0.5:4150/oauth/authorize\""));
     assert(strstr(r, "\"token_endpoint\":\"http://10.0.0.5:4150/oauth/token\""));
@@ -110,7 +110,7 @@ static void test_discovery(void) {
 }
 
 static void test_register(void) {
-    const char *r = do_req(oauth_handle_register, "POST", "/oauth/register",
+    const char *r = do_req("POST", "/oauth/register",
                            "10.0.0.5:4150",
                            "{\"client_name\":\"test\",\"redirect_uris\":[\"http://localhost:33418/cb\"]}");
     assert(strstr(r, "HTTP/1.1 201"));
@@ -122,7 +122,7 @@ static void test_register(void) {
 
 static void test_authorize_form(void) {
     // XSS hygiene: params must come back HTML-escaped in hidden fields.
-    const char *r = do_req(oauth_handle_authorize_get, "GET",
+    const char *r = do_req("GET",
                            "/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A33418%2Fcb"
                            "&state=st%22%3E%3Cscript%3E&code_challenge=abc123"
                            "&code_challenge_method=S256&client_id=sys-autopilot",
@@ -134,13 +134,13 @@ static void test_authorize_form(void) {
     assert(!strstr(r, "st\"><script>"));
 
     // Missing PKCE challenge -> rejected.
-    r = do_req(oauth_handle_authorize_get, "GET",
+    r = do_req("GET",
                "/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb",
                "10.0.0.5:4150", NULL);
     assert(strstr(r, "HTTP/1.1 400"));
 
     // Missing redirect_uri -> rejected.
-    r = do_req(oauth_handle_authorize_get, "GET",
+    r = do_req("GET",
                "/oauth/authorize?code_challenge=abc", "10.0.0.5:4150", NULL);
     assert(strstr(r, "HTTP/1.1 400"));
     printf("authorize form ok\n");
@@ -149,7 +149,7 @@ static void test_authorize_form(void) {
 static void test_no_creds_configured(void) {
     Config empty = { .port = 4150 };
     oauth_init(&empty);
-    const char *r = do_req(oauth_handle_authorize_get, "GET",
+    const char *r = do_req("GET",
                            "/oauth/authorize?redirect_uri=http%3A%2F%2Fl%2Fcb&code_challenge=x",
                            "h:1", NULL);
     assert(strstr(r, "HTTP/1.1 403"));
@@ -185,7 +185,7 @@ static void test_full_flow(void) {
     snprintf(body, sizeof(body),
              "redirect_uri=http%%3A%%2F%%2Flocalhost%%3A33418%%2Fcb&state=xyz"
              "&code_challenge=%s&username=admin&password=wrong", challenge);
-    const char *r = do_req(oauth_handle_authorize_post, "POST", "/oauth/authorize",
+    const char *r = do_req("POST", "/oauth/authorize",
                            "10.0.0.5:4150", body);
     assert(strstr(r, "HTTP/1.1 200"));
     assert(strstr(r, "Incorrect username or password"));
@@ -195,7 +195,7 @@ static void test_full_flow(void) {
     snprintf(body, sizeof(body),
              "redirect_uri=http%%3A%%2F%%2Flocalhost%%3A33418%%2Fcb&state=xyz"
              "&code_challenge=%s&username=admin&password=hunter2", challenge);
-    r = do_req(oauth_handle_authorize_post, "POST", "/oauth/authorize",
+    r = do_req("POST", "/oauth/authorize",
                "10.0.0.5:4150", body);
     assert(strstr(r, "HTTP/1.1 302"));
     char location[1024];
@@ -211,21 +211,21 @@ static void test_full_flow(void) {
     snprintf(body, sizeof(body),
              "grant_type=authorization_code&code=%s&code_verifier=wrong-verifier"
              "&redirect_uri=http%%3A%%2F%%2Flocalhost%%3A33418%%2Fcb", code);
-    r = do_req(oauth_handle_token, "POST", "/oauth/token", "10.0.0.5:4150", body);
+    r = do_req("POST", "/oauth/token", "10.0.0.5:4150", body);
     assert(strstr(r, "invalid_grant"));
 
     // The code is single-use: even the right verifier must now fail.
     snprintf(body, sizeof(body),
              "grant_type=authorization_code&code=%s&code_verifier=%s"
              "&redirect_uri=http%%3A%%2F%%2Flocalhost%%3A33418%%2Fcb", code, verifier);
-    r = do_req(oauth_handle_token, "POST", "/oauth/token", "10.0.0.5:4150", body);
+    r = do_req("POST", "/oauth/token", "10.0.0.5:4150", body);
     assert(strstr(r, "invalid_grant"));
 
     // 4. Fresh login -> valid exchange -> bearer token.
     snprintf(body, sizeof(body),
              "redirect_uri=http%%3A%%2F%%2Flocalhost%%3A33418%%2Fcb"
              "&code_challenge=%s&username=admin&password=hunter2", challenge);
-    r = do_req(oauth_handle_authorize_post, "POST", "/oauth/authorize",
+    r = do_req("POST", "/oauth/authorize",
                "10.0.0.5:4150", body);
     assert(get_location(r, location, sizeof(location)));
     snprintf(code, sizeof(code), "%.*s", (int)strcspn(location + 31, "&"), location + 31);
@@ -233,7 +233,7 @@ static void test_full_flow(void) {
     snprintf(body, sizeof(body),
              "grant_type=authorization_code&code=%s&code_verifier=%s"
              "&redirect_uri=http%%3A%%2F%%2Flocalhost%%3A33418%%2Fcb", code, verifier);
-    r = do_req(oauth_handle_token, "POST", "/oauth/token", "10.0.0.5:4150", body);
+    r = do_req("POST", "/oauth/token", "10.0.0.5:4150", body);
     assert(strstr(r, "HTTP/1.1 200"));
     assert(strstr(r, "\"token_type\":\"Bearer\""));
 
@@ -273,6 +273,7 @@ int main(void) {
     snprintf(g_test_cfg.password, sizeof(g_test_cfg.password), "hunter2");
     g_test_cfg.port = 4150;
     oauth_init(&g_test_cfg);
+    oauth_http_register();
 
     test_sha256_vectors();
     test_discovery();

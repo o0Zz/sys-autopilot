@@ -2,26 +2,19 @@
 #include <string.h>
 #include <switch.h>
 
-#include "common/config.h"
-#include "common/device_info.h"
-#include "common/input.h"
-#include "common/install.h"
-#include "common/log.h"
-#include "common/netif.h"
-#ifndef AUTOPILOT_NO_MCP
-#include "common/oauth.h"
-#endif
-#include "common/power.h"
-#include "common/process.h"
-#include "common/routes.h"
-#include "common/server.h"
-#include "common/settings.h"
+#include "core/config.h"
+#include "core/http_server.h"
+#include "core/log.h"
+#include "features/feature_list.h"
+#include "platform/device_info.h"
+#include "platform/netif.h"
+#include "platform/power.h"
 
 // Inner heap: socket transfer memory + stdio buffers + dir listing JSON +
 // headroom for the title installer (ncm IPC, mounting the cnmt NCA). The large
-// transient buffers (JPEG, I/O, installer, title listing) share the static
-// scratch arena (common/scratch.c); GET /status reports how much of this heap
-// is actually used.
+// transient buffers (JPEG, I/O, installer, title listing) live in request
+// memory (core/request.h), not here; GET /status reports how much of this
+// heap is actually used.
 #define INNER_HEAP_SIZE 0x100000
 
 #ifdef __cplusplus
@@ -146,28 +139,17 @@ void __appInit(void)
     if (!netif_init())
         LOGF("netif: nifm init failed; mDNS A records unavailable\n");
 
-    // System-settings services (lbl/audctl/psm) for the settings tools. Opened
-    // while sm is up; best-effort (a missing service just disables its tool).
-    settings_init();
-
-    // Title installation services (ncm/ns/es). Opened while sm is up; if these
-    // fail the /install endpoint reports unavailability.
-    if (!install_init())
-        LOGF("install: services unavailable; /install disabled\n");
-
-    // pm:shell/pm:dmnt for starting, stopping and querying other programs.
-    // Opened while sm is up; non-fatal, the endpoints report unavailability.
-    if (!process_init())
-        LOGF("process: pm unavailable; /process disabled\n");
+    // The services each feature needs (settings, installer, process
+    // control). Opened while sm is up; all best-effort, a missing service just
+    // makes its endpoints report unavailability.
+    features_init();
 
     smExit();
 }
 
 void __appExit(void)
 {
-    process_exit();
-    install_exit();
-    settings_exit();
+    features_exit();
     netif_exit();
     power_keepawake_exit();
     power_spsm_exit();
@@ -189,18 +171,10 @@ int main(int argc, char* argv[])
     Config cfg;
     config_load(&cfg);
 
-    // What GET /status reports: the setting only counts when idle:sys actually
-    // opened.
-    routes_set_keep_awake(cfg.keep_awake && power_keepawake_available());
-
-#ifndef AUTOPILOT_NO_MCP
-    // OAuth state (config reference + persisted token list).
-    oauth_init(&cfg);
-#endif
+    // Every feature plugs its routes and MCP tools into the servers.
+    features_register(&cfg);
 
     // Blocks forever (NULL idle callback).
-    server_run(&cfg, NULL);
-
-    input_exit();
+    http_server_run(&cfg, NULL);
     return 0;
 }

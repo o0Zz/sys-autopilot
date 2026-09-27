@@ -1,5 +1,6 @@
 // Host end-to-end tests for the MCP endpoint: real HTTP request parsing and
-// mcp_handle_post over a socketpair, with input/screen stubbed (stubs.c).
+// routing over a socketpair, with the tools every feature registers and
+// input/screen stubbed (stubs.c).
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,15 +9,27 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
-#include "base64.h"
-#include "buttons.h"
-#include "config.h"
-#include "files.h"
-#include "http.h"
-#include "mcp.h"
-#include "oauth.h"
-#include "power.h"
-#include "process.h"
+#include "util/base64.h"
+#include "features/input/buttons.h"
+#include "core/config.h"
+#include "features/files/files.h"
+#include "core/http.h"
+#include "core/http_server.h"
+#include "features/files/files_http.h"
+#include "features/files/files_mcp.h"
+#include "features/input/input_mcp.h"
+#include "features/network/network_mcp.h"
+#include "features/oauth/oauth_mcp.h"
+#include "features/power/power_mcp.h"
+#include "features/process/process_mcp.h"
+#include "features/screen/screen_mcp.h"
+#include "features/settings/settings_mcp.h"
+#include "features/status/status_mcp.h"
+#include "features/titles/titles_mcp.h"
+#include "features/mcp/mcp_server.h"
+#include "features/oauth/oauth.h"
+#include "platform/power.h"
+#include "features/process/process.h"
 
 extern uint64_t stub_tap_mask;
 extern int stub_tap_duration;
@@ -24,6 +37,8 @@ extern int stub_tap_count;
 extern int stub_touch_x, stub_touch_y, stub_touch_duration;
 extern int stub_swipe_from_x, stub_swipe_from_y, stub_swipe_to_x, stub_swipe_to_y;
 extern int stub_touch_count;
+
+static const Config kNoAuth;
 
 // Issues one POST /mcp request with the given JSON body; returns the raw HTTP
 // response in a static buffer.
@@ -48,7 +63,7 @@ static const char *do_rpc(const char *body) {
     static HttpRequest hreq;
     assert(http_read_request(sv[0], &hreq));
     assert(strcmp(hreq.path, "/mcp") == 0);
-    mcp_handle_post(&hreq);
+    http_server_dispatch(&kNoAuth, &hreq);
     close(sv[0]);
 
     size_t total = 0;
@@ -217,9 +232,8 @@ static void test_upload_and_files(void) {
     printf("upload/files ok\n");
 }
 
-// Issues one request against a /files handler; returns the raw HTTP response.
-static const char *do_files(const char *method, const char *target,
-                            void (*handler)(HttpRequest *)) {
+// Issues one /files request through the router; returns the raw HTTP response.
+static const char *do_files(const char *method, const char *target) {
     static char resp[4096];
     int sv[2];
     assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
@@ -230,7 +244,7 @@ static const char *do_files(const char *method, const char *target,
 
     static HttpRequest hreq;
     assert(http_read_request(sv[0], &hreq));
-    handler(&hreq);
+    http_server_dispatch(&kNoAuth, &hreq);
     close(sv[0]);
 
     size_t total = 0;
@@ -253,36 +267,33 @@ static void test_move_file(void) {
     struct stat st;
 
     // Rename within the same directory.
-    const char *r = do_files("POST", "/files/move?path=/mv/a.txt&to=/mv/b.txt",
-                             files_handle_move);
+    const char *r = do_files("POST", "/files/move?path=/mv/a.txt&to=/mv/b.txt");
     assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
     assert(strstr(r, "\"moved\":\"/mv/a.txt\",\"to\":\"/mv/b.txt\""));
     assert(stat(FAKE_SD "/mv/a.txt", &st) != 0);
     assert(stat(FAKE_SD "/mv/b.txt", &st) == 0 && st.st_size == 3);
 
     // Move into a directory that does not exist yet: parents are created.
-    r = do_files("POST", "/files/move?path=/mv/b.txt&to=/mv/sub/deep/c.txt",
-                 files_handle_move);
+    r = do_files("POST", "/files/move?path=/mv/b.txt&to=/mv/sub/deep/c.txt");
     assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
     assert(stat(FAKE_SD "/mv/sub/deep/c.txt", &st) == 0);
 
     // Directories move too.
-    r = do_files("POST", "/files/move?path=/mv/sub&to=/mv/renamed", files_handle_move);
+    r = do_files("POST", "/files/move?path=/mv/sub&to=/mv/renamed");
     assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
     assert(stat(FAKE_SD "/mv/renamed/deep/c.txt", &st) == 0);
 
     // Never overwrites an existing destination.
-    r = do_files("POST", "/files/move?path=/mv/renamed/deep/c.txt&to=/mv/taken.txt",
-                 files_handle_move);
+    r = do_files("POST", "/files/move?path=/mv/renamed/deep/c.txt&to=/mv/taken.txt");
     assert(strncmp(r, "HTTP/1.1 409 ", 13) == 0);
     assert(stat(FAKE_SD "/mv/renamed/deep/c.txt", &st) == 0);
 
     // Missing source, missing 'to', and traversal in 'to'.
-    r = do_files("POST", "/files/move?path=/mv/nope&to=/mv/x", files_handle_move);
+    r = do_files("POST", "/files/move?path=/mv/nope&to=/mv/x");
     assert(strncmp(r, "HTTP/1.1 404 ", 13) == 0);
-    r = do_files("POST", "/files/move?path=/mv/taken.txt", files_handle_move);
+    r = do_files("POST", "/files/move?path=/mv/taken.txt");
     assert(strncmp(r, "HTTP/1.1 400 ", 13) == 0);
-    r = do_files("POST", "/files/move?path=/mv/taken.txt&to=/../escape", files_handle_move);
+    r = do_files("POST", "/files/move?path=/mv/taken.txt&to=/../escape");
     assert(strncmp(r, "HTTP/1.1 400 ", 13) == 0);
     assert(stat(FAKE_SD "/mv/taken.txt", &st) == 0);
     printf("move ok\n");
@@ -588,6 +599,21 @@ int main(void) {
     snprintf(g_cfg_for_oauth.username, sizeof(g_cfg_for_oauth.username), "u");
     snprintf(g_cfg_for_oauth.password, sizeof(g_cfg_for_oauth.password), "p");
     oauth_init(&g_cfg_for_oauth);
+
+    // What source/features/feature_list.c does for the MCP-capable features.
+    files_http_register();
+    mcp_server_http_register();
+    screen_mcp_register();
+    input_mcp_register();
+    status_mcp_register();
+    files_mcp_register();
+    oauth_mcp_register();
+    power_mcp_register();
+    process_mcp_register();
+    settings_mcp_register();
+    titles_mcp_register();
+    network_mcp_register();
+
     test_initialize();
     test_notification();
     test_ping_and_errors();

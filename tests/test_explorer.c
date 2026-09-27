@@ -1,6 +1,7 @@
-// Host-side unit test for source/common/explorer.c (the built-in file explorer
-// page and its root redirect).
-#include "explorer.h"
+// Host-side unit test for the explorer feature (the built-in file explorer
+// page and its root redirect), driven through the HTTP router.
+#include "core/http_server.h"
+#include "features/explorer/explorer_http.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,16 +11,24 @@
 
 static char out[65536];
 
-// Runs a handler against a socketpair and returns what it wrote.
-static size_t capture(void (*handler)(HttpRequest *), const char *host) {
+static const Config kNoAuth; // no credentials: every route is open
+
+// Serves GET `path` through the router over a socketpair; `handler`, when set,
+// replaces routing (for testing response helpers). Returns what was written.
+static size_t capture(const char *path, void (*handler)(HttpRequest *), const char *host) {
     int sv[2];
     assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
 
-    HttpRequest req;
+    static HttpRequest req;
     memset(&req, 0, sizeof(req));
     req.fd = sv[0];
+    snprintf(req.method, sizeof(req.method), "GET");
+    snprintf(req.path, sizeof(req.path), "%s", path);
     snprintf(req.host, sizeof(req.host), "%s", host);
-    handler(&req);
+    if (handler)
+        handler(&req);
+    else
+        http_server_dispatch(&kNoAuth, &req);
     shutdown(sv[0], SHUT_WR);
 
     size_t total = 0;
@@ -34,12 +43,14 @@ static size_t capture(void (*handler)(HttpRequest *), const char *host) {
 }
 
 static void send_unauthorized(HttpRequest *req) {
-    http_send_unauthorized(req, true, true);
+    http_send_unauthorized(req, true, true, "/.well-known/oauth-protected-resource");
 }
 
 int main(void) {
+    explorer_http_register();
+
     // 1. The page is served as HTML, with a Content-Length matching the body.
-    capture(explorer_handle_page, "console:4150");
+    capture("/explorer", NULL, "console:4150");
     assert(strncmp(out, "HTTP/1.1 200 OK\r\n", 17) == 0);
     assert(strstr(out, "Content-Type: text/html\r\n"));
 
@@ -58,13 +69,13 @@ int main(void) {
     assert(strstr(body, "'/move'"));
 
     // 2. The bare address redirects to the explorer.
-    capture(explorer_handle_root, "console:4150");
+    capture("/", NULL, "console:4150");
     assert(strncmp(out, "HTTP/1.1 302 Found\r\n", 20) == 0);
     assert(strstr(out, "Location: /explorer\r\n"));
 
     // 3. Browsers pick the first scheme they understand, so Basic must be
     //    offered ahead of Bearer or the login prompt never appears.
-    capture(send_unauthorized, "console:4150");
+    capture("/", send_unauthorized, "console:4150");
     const char *basic = strstr(out, "WWW-Authenticate: Basic ");
     const char *bearer = strstr(out, "WWW-Authenticate: Bearer ");
     assert(basic && bearer && basic < bearer);
