@@ -2,22 +2,20 @@
 #include <string.h>
 #include <switch.h>
 
-#include "common/config.h"
-#include "common/device_info.h"
-#include "common/input.h"
-#include "common/install.h"
-#include "common/log.h"
-#include "common/netif.h"
-#include "common/oauth.h"
-#include "common/power.h"
-#include "common/process.h"
-#include "common/server.h"
-#include "common/settings.h"
+#include "core/config.h"
+#include "core/http_server.h"
+#include "core/log.h"
+#include "features/feature_list.h"
+#include "platform/device_info.h"
+#include "platform/netif.h"
+#include "platform/power.h"
 
 // Inner heap: socket transfer memory + stdio buffers + dir listing JSON +
 // headroom for the title installer (ncm IPC, mounting the cnmt NCA). The large
-// fixed buffers (JPEG, I/O, HDLS workmem, install chunk) are static bss.
-#define INNER_HEAP_SIZE 0x400000
+// transient buffers (JPEG, I/O, installer, title listing) live in request
+// memory (core/request.h), not here; GET /status reports how much of this
+// heap is actually used.
+#define INNER_HEAP_SIZE 0x100000
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,18 +41,29 @@ void __libnx_initheap(void)
     fake_heap_end   = inner_heap + sizeof(inner_heap);
 }
 
-// Keep socket buffers small to fit the sysmodule memory budget.
+// Socket buffers. The pool bsd allocates for us is
+// sb_efficiency * (tcp_tx + tcp_rx + udp_tx + udp_rx), and every socket in
+// existence draws its buffers from it -- including connections merely waiting
+// in the listen backlog. At sb_efficiency 2 that pool held the listener plus
+// exactly one connection, so while any request was in flight the next client
+// was accepted by the stack and then immediately reset, which is what made
+// browsers (several connections per page load) and the REST clients see
+// "connection forcibly closed" at random.
+//
+// Smaller per-socket buffers buy more of them for roughly the same memory:
+// this pool is ~520K against ~232K before, and holds ten sockets instead of
+// two. The REST payloads are small, and a 16K receive window still streams a
+// screenshot or a sysmodule upload at several MB/s on a LAN.
 static const SocketInitConfig kSocketConfig = {
-    .tcp_tx_buf_size     = 0x8000,
-    .tcp_rx_buf_size     = 0x10000,
+    .tcp_tx_buf_size     = 0x4000,
+    .tcp_rx_buf_size     = 0x4000,
     .tcp_tx_buf_max_size = 0,       // fixed size
     .tcp_rx_buf_max_size = 0,       // fixed size
     .udp_tx_buf_size     = 0x2400,
-    .udp_rx_buf_size     = 0xA500,
-    .sb_efficiency       = 2,
-    // Sessions in concurrent use: the TCP listener, one accepted client, and
-    // the persistent mDNS/DNS-SD UDP socket. 3 is the minimum; use 4 for a
-    // little headroom.
+    .udp_rx_buf_size     = 0x2400,  // mDNS packets are ~1.5K
+    .sb_efficiency       = 10,
+    // Sessions are bsd IPC channels, not sockets: this server is
+    // single-threaded, so it never needs more than a couple.
     .num_bsd_sessions    = 4,
     .bsd_service_type    = BsdServiceType_User,
 };
@@ -111,6 +120,13 @@ void __appInit(void)
     // the endpoints report unavailability.
     power_spsm_init();
 
+    // idle:sys, used to hold off auto-sleep. Non-fatal: without it the console
+    // sleeps on its timeout and stops answering. The session is opened
+    // unconditionally because config.ini is only read after __appInit; whether
+    // we actually ping is decided by the server loop.
+    if (!power_keepawake_init())
+        LOGF("power: idle:sys unavailable; auto-sleep cannot be held off\n");
+
     // Gather device facts (model/firmware/Atmosphère) for the mDNS TXT record
     // now, while the sm session is still open: the underlying set:sys/spl
     // smGetService calls would fail after smExit(). Best-effort; failures just
@@ -123,29 +139,19 @@ void __appInit(void)
     if (!netif_init())
         LOGF("netif: nifm init failed; mDNS A records unavailable\n");
 
-    // System-settings services (lbl/audctl/psm) for the settings tools. Opened
-    // while sm is up; best-effort (a missing service just disables its tool).
-    settings_init();
-
-    // Title installation services (ncm/ns/es). Opened while sm is up; if these
-    // fail the /install endpoint reports unavailability.
-    if (!install_init())
-        LOGF("install: services unavailable; /install disabled\n");
-
-    // pm:shell/pm:dmnt for starting, stopping and querying other programs.
-    // Opened while sm is up; non-fatal, the endpoints report unavailability.
-    if (!process_init())
-        LOGF("process: pm unavailable; /process disabled\n");
+    // The services each feature needs (settings, installer, process
+    // control). Opened while sm is up; all best-effort, a missing service just
+    // makes its endpoints report unavailability.
+    features_init();
 
     smExit();
 }
 
 void __appExit(void)
 {
-    process_exit();
-    install_exit();
-    settings_exit();
+    features_exit();
     netif_exit();
+    power_keepawake_exit();
     power_spsm_exit();
     power_exit();
     timeExit();
@@ -165,12 +171,10 @@ int main(int argc, char* argv[])
     Config cfg;
     config_load(&cfg);
 
-    // OAuth state (config reference + persisted token list).
-    oauth_init(&cfg);
+    // Every feature plugs its routes and MCP tools into the servers.
+    features_register(&cfg);
 
     // Blocks forever (NULL idle callback).
-    server_run(&cfg, NULL);
-
-    input_exit();
+    http_server_run(&cfg, NULL);
     return 0;
 }

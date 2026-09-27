@@ -22,9 +22,34 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	sys-autopilot
 BUILD		:=	build
-SOURCES		:=	source source/common
 DATA		:=	data
-INCLUDES	:=	include lib/jsmn
+INCLUDES	:=	include lib/jsmn source
+
+# Features (source/features/<name>/). The first five are always built; the
+# optional ones are chosen here, e.g. `make FEATURES="explorer power"` for a
+# smaller build. source/features/feature_list.c registers whatever is compiled
+# in, keyed on the FEATURE_<NAME> define each one gets. Run `make clean` when
+# changing it.
+BASE_FEATURES	:=	status screen input files settings
+FEATURES	?=	explorer install network power process titles
+
+# MCP=0 leaves out the MCP endpoint, the OAuth login that exists for MCP
+# clients, and every feature's *_mcp.c, for a smaller binary and less resident
+# memory when only the REST API is used. Bearer auth then accepts only the
+# `token` from config.ini. Run `make clean` when switching.
+MCP ?= 1
+ifeq ($(MCP),0)
+MCP_FEATURES	:=
+EXCLUDED_FILES	:=	%_mcp.c
+else
+MCP_FEATURES	:=	mcp oauth
+EXCLUDED_FILES	:=
+endif
+
+BUILT_FEATURES	:=	$(BASE_FEATURES) $(FEATURES) $(MCP_FEATURES)
+SOURCES		:=	source source/core source/util source/platform source/features \
+			$(addprefix source/features/,$(BUILT_FEATURES))
+DEFINES	+=	$(foreach f,$(FEATURES) $(MCP_FEATURES),-DFEATURE_$(shell echo $(f) | tr a-z A-Z))
 
 # Atmosphere program (title) ID for this sysmodule.
 export TITLE_ID	:=	4200000000004150
@@ -45,7 +70,7 @@ DEFINES	+=	-DLOG_TO_FILE
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	-g -Wall -O2 -ffunction-sections \
+CFLAGS	:=	-g -Wall -Os -ffunction-sections -fdata-sections \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__
@@ -53,7 +78,28 @@ CFLAGS	+=	$(INCLUDE) -D__SWITCH__
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 
 ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+# Nothing here unwinds (plain C, no exceptions), so the libraries' .eh_frame
+# is dead weight. The discard script only wins if it precedes switch.ld, which
+# only a specs file listed before switch.specs achieves. Both are written into
+# $(BUILD) at link time (see below); the link runs there, so the relative
+# paths resolve.
+define DISCARD_EHFRAME_LD
+SECTIONS
+{
+    /DISCARD/ : { EXCLUDE_FILE(*crtbegin.o) *(.eh_frame_hdr .eh_frame) }
+}
+endef
+
+define DISCARD_EHFRAME_SPECS
+%rename link pre_old_link
+
+*link:
+%(pre_old_link) -T discard-ehframe.ld
+endef
+
+export DISCARD_EHFRAME_LD DISCARD_EHFRAME_SPECS
+
+LDFLAGS	=	-specs=discard-ehframe.specs -specs=$(DEVKITPRO)/libnx/switch.specs 			-g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:= -lnx
 
@@ -79,7 +125,7 @@ export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 
 export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
-CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CFILES		:=	$(filter-out $(EXCLUDED_FILES),$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))))
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
@@ -141,12 +187,19 @@ DEPENDS	:=	$(OFILES:.o=.d)
 # main targets
 #---------------------------------------------------------------------------------
 all	:	$(OUTPUT).nsp
+	@sh $(TOPDIR)/scripts/check_static_buffers.sh $(OUTPUT).elf
 
 $(OUTPUT).nsp	:	$(OUTPUT).nso $(OUTPUT).npdm
 
 $(OUTPUT).nso	:	$(OUTPUT).elf
 
-$(OUTPUT).elf	:	$(OFILES)
+$(OUTPUT).elf	:	$(OFILES) discard-ehframe.ld discard-ehframe.specs
+
+discard-ehframe.ld:
+	@printf '%s\n' "$$DISCARD_EHFRAME_LD" > $@
+
+discard-ehframe.specs:
+	@printf '%s\n' "$$DISCARD_EHFRAME_SPECS" > $@
 
 $(OFILES_SRC)	: $(HFILES_BIN)
 

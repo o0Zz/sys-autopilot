@@ -1,9 +1,9 @@
 # sys-autopilot
 
 A Nintendo Switch (Atmosphère) sysmodule that runs a persistent HTTP server on
-the console. It exposes a REST API **and a native MCP (Model Context Protocol)
-endpoint** for taking screenshots, injecting controller input, and
-reading/writing files on the SD card — everything an AI agent needs to drive
+the console. It exposes a REST API, **a native MCP (Model Context Protocol)
+endpoint**, and a browser file explorer for taking screenshots, injecting
+controller input, and reading/writing files on the SD card — everything an AI agent needs to drive
 the Switch while testing homebrew applications.
 
 Typical agent loop:
@@ -27,6 +27,17 @@ make -C app     # builds the dev .nro flavor (see below)
 ./tests/run.sh  # host-side test suite (no devkitPro required)
 ```
 
+To leave more memory to the rest of the system when you only use the REST
+API, build without MCP:
+
+```sh
+make clean && make MCP=0
+```
+
+This drops `/mcp` and the OAuth browser login that exists for MCP clients
+(about 100 KB of code and 120 KB of RAM). Bearer auth then accepts only the
+`token` from `config.ini`; Basic auth is unchanged.
+
 ## Installing
 
 Download the latest `sys-autopilot-<version>.zip` from
@@ -43,8 +54,10 @@ config/sys-autopilot/config.ini
 Reboot. The server starts automatically at boot (boot2) and listens on port
 4150 by default.
 
-> Tip: disable auto-sleep in System Settings while driving the console
-> remotely — sleep mode drops the network connection.
+> The console is held awake while the sysmodule runs, because sleep powers
+> down the WLAN module and the server stops answering until someone presses a
+> button on the console. Set `keep_awake = false` in `config.ini` to let it
+> sleep normally.
 
 ## Configuration
 
@@ -74,6 +87,13 @@ password =
 ; Write diagnostics to log.txt next to this file (the sysmodule has no
 ; console output). Off by default; set to true when troubleshooting.
 log = false
+
+[power]
+; Hold off auto-sleep while this sysmodule runs. Sleep powers down the
+; WLAN module, so the console stops answering until someone presses a
+; button on it. Nothing is persisted: set this to false and the console
+; sleeps again according to System Settings.
+keep_awake = true
 ```
 
 Changes take effect after a reboot. Note this is plain HTTP — auth protects
@@ -191,11 +211,14 @@ Details:
 | `tap_sequence` | Up to 32 taps in one call (menu navigation without round-trips) |
 | `hold_buttons` / `release_buttons` | Persistent button state |
 | `set_stick` | Analog stick (`side`, `x`/`y` in -1..1, optional `durationMs`) |
+| `tap_screen` | Tap the touch screen at a pixel coordinate (same 1280x720 space as the screenshot) |
+| `swipe_screen` | Drag across the touch screen (`fromX/fromY` to `toX/toY`, `durationMs`) |
 | `clear_input` | Release everything, recenter sticks |
 | `status` | Server version, firmware, controller state, uptime, battery % / charging |
 | `list_directory` | JSON listing of an SD card directory |
 | `read_file` | Read text files (32 KB pages, negative `offset` = tail) — ideal for logs |
 | `upload_file` | Write a file (base64 `content`, **streamed to SD — no size cap**) |
+| `move_file` | Rename or move a file or directory (destination parents are created, an existing destination is never overwritten) |
 | `delete_file` | Delete a file / empty directory |
 | `hash_file` | SHA-256 a file (streamed, any size); optional `expected` returns `matched` — verify an upload in one call |
 | `get_theme` / `set_theme` | Read / set the system UI theme (`light` or `dark`; the visible change applies after the HOME menu reloads — sleep/wake or reboot) |
@@ -215,6 +238,27 @@ base64-decoded straight to disk, so the file size is bounded by the SD card,
 not RAM. But MCP tool arguments are generated token-by-token by the model, so
 multi-megabyte uploads are context-expensive — deploy `.nro` builds with
 `curl -T` against the raw HTTP API instead.
+
+## File explorer
+
+Point a browser at the console and you get a small file manager, served by the
+sysmodule itself:
+
+```
+http://<ip>:4150/          -> redirects to /explorer
+```
+
+Browse the SD card, open a text file and edit it in place (Save writes it
+back), upload by drag-and-drop, download, rename or move (edit the path in
+the prompt), delete. The **live** checkbox
+re-reads the open file every 2s and keeps the view pinned to the end, which
+makes it a log tail. The page is the same origin as the API, so it just calls
+`/files` directly.
+
+When `username` and `password` are set in `config.ini`, the browser asks for
+them on the first request and reuses them for everything the page does. A
+token-only setup has no browser login: the API still works with
+`Authorization: Bearer`, but the explorer cannot sign in.
 
 ## REST API
 
@@ -261,6 +305,34 @@ curl -X POST http://<ip>:4150/input/tap \
      -d '{"buttons":["RIGHT"]}'
 ```
 
+### Touch screen
+
+Injected through `hiddbg`, independently of the virtual controller: no
+attach, and a physical controller can stay connected. Coordinates are pixels
+in the panel's 1280x720 space, which is exactly the space of the JPEG
+`/screenshot` returns — read a target off the screenshot and tap it.
+
+```
+POST /input/touch    {"x":640,"y":360,"durationMs":100}
+POST /input/swipe    {"fromX":200,"fromY":600,"toX":200,"toY":100,"durationMs":300}
+```
+
+Both are synchronous: the gesture is driven frame by frame (~60Hz) for
+`durationMs`, and the panel is handed back to the player before the response.
+`durationMs` defaults to 100 (tap) / 300 (swipe), with a 32ms floor and the
+usual 10s cap. Out-of-range coordinates are rejected with 400.
+
+```sh
+# scroll a list by flicking up from the bottom of the screen
+curl -X POST http://<ip>:4150/input/swipe \
+     -H 'Content-Type: application/json' \
+     -d '{"fromX":640,"fromY":600,"toX":640,"toY":150,"durationMs":250}'
+```
+
+The panel is only live in handheld mode — docked, the console ignores touch
+entirely (just as it ignores a finger), so this is no substitute for the
+controller endpoints.
+
 ### Files
 
 All paths are rooted at the SD card (`sdmc:`); `..` traversal is rejected.
@@ -272,6 +344,7 @@ GET    /files/hash?path=/switch/myapp.nro          SHA-256 digest (JSON)
 GET    /files?path=/switch/                       directory listing (JSON)
 PUT    /files?path=/switch/myapp.nro              upload (raw request body)
 DELETE /files?path=/switch/myapp.nro              delete file / empty dir
+POST   /files/move?path=/switch/a.nro&to=/switch/b.nro   rename / move (never overwrites)
 ```
 
 ```sh
@@ -424,10 +497,12 @@ GET /status
 ```
 
 ```json
-{"version":"1.1.0","firmware":"19.0.1","controllerAttached":true,"uptimeSeconds":4242,"batteryPercent":87,"charging":true}
+{"version":"1.1.0","firmware":"19.0.1","controllerAttached":true,"keepAwake":true,"uptimeSeconds":4242,"heapSizeBytes":1048576,"heapArenaBytes":612352,"heapUsedBytes":530112,"batteryPercent":87,"charging":true}
 ```
 
 `batteryPercent`/`charging` are included when the battery service is available.
+The `heap*` fields describe the sysmodule's own heap: its fixed size, how far
+it has grown (close to its high-water mark), and what is allocated now.
 
 ### System settings
 
@@ -487,10 +562,14 @@ source/common/         shared server core
   mdns.c               mDNS / DNS-SD responder (<hostname>.local + service)
   device_info.c        device facts for the DNS-SD TXT record (model/fw/ams)
   routes.c             REST endpoint dispatch, /status
+  explorer.c           built-in browser file explorer (/ and /explorer)
+  explorer.html        its page source (edit this one)
+  explorer_page.h      generated C string (scripts/gen_explorer.py)
   mcp.c                MCP endpoint: JSON-RPC 2.0 dispatch + tools
   mcp_tools.h          generated tools/list payload (scripts/gen_tools.py)
   jstream.c            streaming JSON pre-pass (diverts upload content to disk)
   json.c               jsmn wrapper helpers (parse/get/escape)
+  scratch.c            request-scoped arena for large transient buffers
   base64.c             streaming base64 encoder/decoder
   buttons.c            button name table (host-testable)
   apiargs.c            shared JSON argument parsing (REST + MCP)
@@ -538,4 +617,6 @@ GitHub Release with the SD-card zip and dev `.nro` attached.
 - MCP transport details: stateless (no session IDs), plain JSON responses (no
   SSE), `GET /mcp` returns 405, JSON-RPC batching unsupported (removed in MCP
   2025-06-18 anyway).
+- Touch input only reaches applications in handheld mode; docked, the panel
+  is off, so `/input/touch` succeeds while nothing happens on screen.
 - No TLS; treat the API as LAN-trusted.

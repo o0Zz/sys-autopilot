@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "config.h"
-#include "mdns.h"
+#include "core/config.h"
+#include "core/mdns.h"
 
 // --- tiny DNS reader for assertions -------------------------------------------
 
@@ -288,6 +288,7 @@ static void test_announcement(void) {
 
 int main(void) {
     printf("== test_mdns ==\n");
+    mdns_add_txt("path=/mcp"); // what the MCP feature registers
     test_a_query();
     test_ptr_browse();
     test_srv_port();

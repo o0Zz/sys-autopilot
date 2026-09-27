@@ -4,14 +4,12 @@
 #include <arpa/inet.h>
 #include <switch.h>
 
-#include "common/config.h"
-#include "common/device_info.h"
-#include "common/input.h"
-#include "common/netif.h"
-#include "common/oauth.h"
-#include "common/power.h"
-#include "common/server.h"
-#include "common/settings.h"
+#include "core/config.h"
+#include "core/http_server.h"
+#include "features/feature_list.h"
+#include "platform/device_info.h"
+#include "platform/netif.h"
+#include "platform/power.h"
 
 static PadState g_pad;
 
@@ -52,9 +50,8 @@ int main(int argc, char* argv[])
     // Device facts + network interface for mDNS (best-effort under HBL).
     device_info_init();
     netif_init();
-    settings_init();
-
-    oauth_init(&cfg);
+    features_init();
+    features_register(&cfg);
 
     // Best-effort: applets are suspended during sleep anyway, but register
     // with PSC when available so the loop quiesces sockets like the
@@ -73,10 +70,9 @@ int main(int argc, char* argv[])
     printf("Press + to exit.\n\n");
     consoleUpdate(NULL);
 
-    server_run(&cfg, app_idle);
+    http_server_run(&cfg, app_idle);
 
-    settings_exit();
-    input_exit();
+    features_exit();
     capsscExit();
     hiddbgExit();
     socketExit();

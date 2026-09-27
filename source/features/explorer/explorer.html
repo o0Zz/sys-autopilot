@@ -1,0 +1,265 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>sys-autopilot files</title>
+<style>
+  :root { color-scheme: dark }
+  * { box-sizing: border-box }
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column;
+         font: 13px ui-monospace, Consolas, monospace; background: #15171a; color: #d7dae0 }
+  header, #bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px;
+                 background: #1d2025; border-bottom: 1px solid #2c3038 }
+  .grow { flex: 1 }
+  button, .btn, a { font: inherit; color: #d7dae0; background: #2a2e36; border: 1px solid #3a3f49;
+                    border-radius: 4px; padding: 3px 9px; cursor: pointer; text-decoration: none }
+  button:disabled { opacity: .4; cursor: default }
+  #crumbs a { background: none; border: none; padding: 0; color: #78a9ff }
+  main { flex: 1; display: flex; min-height: 0 }
+  #list { width: 340px; margin: 0; padding: 0; overflow: auto; list-style: none;
+          border-right: 1px solid #2c3038 }
+  #list li { display: flex; gap: 8px; padding: 3px 10px; cursor: pointer; white-space: nowrap }
+  #list li:hover { background: #22262d }
+  #list li.sel { background: #2d3644 }
+  #list .size { margin-left: auto; color: #6d737e }
+  .dir { color: #78a9ff }
+  #pane { flex: 1; display: flex; flex-direction: column; min-width: 0 }
+  #ed { flex: 1; resize: none; border: 0; outline: 0; padding: 10px; font: inherit;
+        background: #15171a; color: #d7dae0; white-space: pre; overflow: auto }
+  #name { overflow: hidden; text-overflow: ellipsis }
+  #msg { color: #6d737e }
+</style>
+<header>
+  <span id="crumbs"></span>
+  <span class="grow"></span>
+  <span id="msg"></span>
+  <label class="btn">Upload<input type="file" id="up" multiple hidden></label>
+  <button id="refresh">Refresh</button>
+  <button id="reboot">Reboot</button>
+</header>
+<main>
+  <ul id="list"></ul>
+  <section id="pane">
+    <div id="bar">
+      <span id="name">no file</span>
+      <span class="grow"></span>
+      <label><input type="checkbox" id="live"> live</label>
+      <button id="save" disabled>Save</button>
+      <a id="dl" download>Download</a>
+      <button id="ren" disabled>Rename</button>
+      <button id="del" disabled>Delete</button>
+    </div>
+    <textarea id="ed" spellcheck="false"></textarea>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const api = (p, o, move) => fetch('/files' + (move ? '/move' : '') + '?path=' +
+                                  encodeURIComponent(p) + (move || ''), o);
+const human = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' K'
+                 : (n / 1048576).toFixed(1) + ' M';
+let dir = '/', file = null, dirty = false, ourHash = null;
+
+// The location hash mirrors where we are, so F5 / Ctrl+R (and back/forward)
+// come back to the same directory and file instead of jumping to the root.
+function syncHash() {
+  const want = '#' + encodeURI(dir) + (file ? '?file=' + encodeURIComponent(file) : '');
+  ourHash = want;
+  if (location.hash !== want) location.hash = want;
+}
+
+function parseHash() {
+  const raw = location.hash.slice(1);
+  const cut = raw.indexOf('?file=');
+  const at = decodeURI(cut < 0 ? raw : raw.slice(0, cut)) || '/';
+  return [at.startsWith('/') ? at : '/' + at,
+          cut < 0 ? null : decodeURIComponent(raw.slice(cut + 6))];
+}
+
+function say(text, keep) {
+  $('msg').textContent = text;
+  if (!keep) setTimeout(() => { if ($('msg').textContent === text) $('msg').textContent = ''; }, 3000);
+}
+
+async function call(path, opts, what, move) {
+  const r = await api(path, opts, move);
+  if (r.status === 401) {
+    // The page itself loaded, so the browser had credentials a moment ago:
+    // reloading re-runs the navigation and lets it prompt again.
+    say('unauthorized - reload to sign in again', true);
+    throw new Error(401);
+  }
+  if (!r.ok) { say(what + ' failed: ' + (await r.text()).slice(0, 120), true); throw new Error(r.status); }
+  return r;
+}
+
+async function loadDir(path) {
+  dir = path.endsWith('/') ? path : path + '/';
+  const data = await (await call(dir, {}, 'list')).json();
+
+  $('crumbs').innerHTML = '';
+  let at = '/';
+  const crumbs = [['sdmc:', '/']].concat(dir.split('/').filter(Boolean).map(s => {
+    at += s + '/';
+    return [s, at];
+  }));
+  crumbs.forEach(([label, target], i) => {
+    if (i) $('crumbs').append(' / ');
+    const a = document.createElement('a');
+    a.href = '#';
+    a.textContent = label;
+    a.onclick = e => { e.preventDefault(); loadDir(target); };
+    $('crumbs').append(a);
+  });
+
+  const entries = data.entries.sort((a, b) =>
+    (a.type === b.type ? 0 : a.type === 'dir' ? -1 : 1) || a.name.localeCompare(b.name));
+  if (dir !== '/') entries.unshift({ name: '..', type: 'dir' });
+
+  $('list').innerHTML = '';
+  for (const e of entries) {
+    const target = e.name === '..' ? dir.replace(/[^/]+\/$/, '') : dir + e.name;
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    const size = document.createElement('span');
+    label.className = e.type === 'dir' ? 'dir' : '';
+    label.textContent = e.type === 'dir' ? e.name + '/' : e.name;
+    size.className = 'size';
+    size.textContent = e.type === 'dir' ? '' : human(e.size);
+    li.append(label, size);
+    li.dataset.path = target;
+    if (target === file) li.classList.add('sel');
+    li.onclick = () => e.type === 'dir' ? loadDir(target) : openFile(target, li);
+    $('list').append(li);
+  }
+  syncHash();
+}
+
+async function openFile(path, li) {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  li = li || [...$('list').children].find(n => n.dataset.path === path);
+  [...$('list').children].forEach(n => n.classList.toggle('sel', n === li));
+  file = path;
+  dirty = false;
+  syncHash();
+  $('name').textContent = path;
+  $('dl').href = '/files?path=' + encodeURIComponent(path);
+  $('dl').download = path.split('/').pop();
+  $('del').disabled = $('ren').disabled = false;
+  await reload();
+}
+
+async function reload() {
+  const buf = await (await call(file, {}, 'read')).arrayBuffer();
+  const text = new TextDecoder().decode(buf);
+  const binary = /[\u0000-\u0008\u000e-\u001f\ufffd]/.test(text.slice(0, 8192));
+  const ed = $('ed');
+  const atEnd = ed.scrollTop + ed.clientHeight >= ed.scrollHeight - 4;
+  const top = ed.scrollTop;
+  ed.value = binary ? '(binary, ' + human(buf.byteLength) + ' - use Download)' : text;
+  ed.readOnly = binary;
+  $('save').disabled = true;
+  ed.scrollTop = atEnd ? ed.scrollHeight : top;
+}
+
+$('ed').oninput = () => { dirty = true; $('save').disabled = false; };
+
+$('save').onclick = async () => {
+  await call(file, { method: 'PUT', body: new Blob([$('ed').value]) }, 'save');
+  dirty = false;
+  $('save').disabled = true;
+  say('saved ' + file);
+  loadDir(dir);
+};
+
+// Ctrl+S (Cmd+S on macOS) saves the open file instead of the browser's
+// "save page as" dialog.
+document.onkeydown = e => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (!$('save').disabled) $('save').onclick();
+  }
+};
+
+$('del').onclick = async () => {
+  if (!confirm('Delete ' + file + ' ?')) return;
+  await call(file, { method: 'DELETE' }, 'delete');
+  file = null;
+  dirty = false;
+  $('ed').value = '';
+  $('name').textContent = 'no file';
+  $('del').disabled = $('ren').disabled = true;
+  loadDir(dir);
+};
+
+$('ren').onclick = async () => {
+  // Edit the name to rename, or the directory part to move.
+  const to = prompt('Rename / move to:', file);
+  if (!to || to === file) return;
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  await call(file, { method: 'POST' }, 'rename', '&to=' + encodeURIComponent(to));
+  say('moved to ' + to);
+  file = null;
+  dirty = false;
+  $('ed').value = '';
+  $('name').textContent = 'no file';
+  $('del').disabled = $('ren').disabled = true;
+  loadDir(to.replace(/[^/]*$/, ''));
+};
+
+$('up').onchange = async e => {
+  for (const f of e.target.files) {
+    say('uploading ' + f.name, true);
+    await call(dir + f.name, { method: 'PUT', body: f }, 'upload');
+  }
+  e.target.value = '';
+  say('uploaded');
+  loadDir(dir);
+};
+
+$('refresh').onclick = () => { loadDir(dir); if (file) reload(); };
+
+$('reboot').onclick = async () => {
+  if (!confirm('Reboot the console? The explorer is unreachable until it boots back.')) return;
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  const r = await fetch('/power/restart', { method: 'POST' });
+  if (!r.ok) return say('reboot failed: ' + (await r.text()).slice(0, 120), true);
+  say('rebooting...', true);
+};
+
+document.ondragover = e => e.preventDefault();
+document.ondrop = e => {
+  e.preventDefault();
+  $('up').files = e.dataTransfer.files;
+  $('up').dispatchEvent(new Event('change'));
+};
+
+setInterval(() => { if ($('live').checked && file && !dirty) reload(); }, 2000);
+
+window.onhashchange = () => {
+  if (location.hash === ourHash) return;  // our own syncHash, nothing to restore
+  restore();
+};
+
+// Restore the hash location; fall back to the root if it is gone (deleted or
+// renamed since the link was made).
+async function restore() {
+  const [at, want] = parseHash();
+  try {
+    await loadDir(at);
+  } catch (e) {
+    say('cannot open ' + at + ' - back to /');
+    file = null;
+    return loadDir('/');
+  }
+  if (!want) return;
+  await openFile(want, null).catch(() => {
+    say('cannot open ' + want);
+    file = null;
+    $('ed').value = '';
+    $('name').textContent = 'no file';
+    $('del').disabled = $('ren').disabled = true;
+    syncHash();
+  });
+}
+
+restore();
+</script>

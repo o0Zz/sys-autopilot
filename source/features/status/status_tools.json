@@ -1,0 +1,12 @@
+{
+  "tools": [
+    {
+      "name": "status",
+      "description": "Get server status: version, console firmware, virtual controller state, uptime, and battery percentage / charging state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

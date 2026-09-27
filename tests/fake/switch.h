@@ -22,7 +22,9 @@ typedef u32 Result;
 #define MAKERESULT(m, d) (((m) & 0x1FF) | (((d) & 0x1FFF) << 9))
 
 enum { Module_Libnx = 345 };
-enum { LibnxError_NotInitialized = 2 };
+enum { LibnxError_NotInitialized = 2, LibnxError_OutOfMemory = 3 };
+
+#define CAPSSC_JPEG_BUFFER_SIZE 0x80000
 
 typedef enum {
     ViLayerStack_Default    = 0,

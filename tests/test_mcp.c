@@ -1,5 +1,6 @@
 // Host end-to-end tests for the MCP endpoint: real HTTP request parsing and
-// mcp_handle_post over a socketpair, with input/screen stubbed (stubs.c).
+// routing over a socketpair, with the tools every feature registers and
+// input/screen stubbed (stubs.c).
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,18 +9,36 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
-#include "base64.h"
-#include "buttons.h"
-#include "config.h"
-#include "http.h"
-#include "mcp.h"
-#include "oauth.h"
-#include "power.h"
-#include "process.h"
+#include "util/base64.h"
+#include "features/input/buttons.h"
+#include "core/config.h"
+#include "features/files/files.h"
+#include "core/http.h"
+#include "core/http_server.h"
+#include "features/files/files_http.h"
+#include "features/files/files_mcp.h"
+#include "features/input/input_mcp.h"
+#include "features/network/network_mcp.h"
+#include "features/oauth/oauth_mcp.h"
+#include "features/power/power_mcp.h"
+#include "features/process/process_mcp.h"
+#include "features/screen/screen_mcp.h"
+#include "features/settings/settings_mcp.h"
+#include "features/status/status_mcp.h"
+#include "features/titles/titles_mcp.h"
+#include "features/mcp/mcp_server.h"
+#include "features/oauth/oauth.h"
+#include "platform/power.h"
+#include "features/process/process.h"
 
 extern uint64_t stub_tap_mask;
 extern int stub_tap_duration;
 extern int stub_tap_count;
+extern int stub_touch_x, stub_touch_y, stub_touch_duration;
+extern int stub_swipe_from_x, stub_swipe_from_y, stub_swipe_to_x, stub_swipe_to_y;
+extern int stub_touch_count;
+
+static const Config kNoAuth;
 
 // Issues one POST /mcp request with the given JSON body; returns the raw HTTP
 // response in a static buffer.
@@ -44,7 +63,7 @@ static const char *do_rpc(const char *body) {
     static HttpRequest hreq;
     assert(http_read_request(sv[0], &hreq));
     assert(strcmp(hreq.path, "/mcp") == 0);
-    mcp_handle_post(&hreq);
+    http_server_dispatch(&kNoAuth, &hreq);
     close(sv[0]);
 
     size_t total = 0;
@@ -94,7 +113,10 @@ static void test_ping_and_errors(void) {
 static void test_tools_list(void) {
     const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\"}");
     assert(strstr(r, "\"tap_buttons\""));
+    assert(strstr(r, "\"tap_screen\""));
+    assert(strstr(r, "\"swipe_screen\""));
     assert(strstr(r, "\"upload_file\""));
+    assert(strstr(r, "\"move_file\""));
     assert(strstr(r, "\"hash_file\""));
     assert(strstr(r, "\"screenshot\""));
     assert(strstr(r, "\"inputSchema\""));
@@ -208,6 +230,73 @@ static void test_upload_and_files(void) {
                "\"params\":{\"name\":\"read_file\",\"arguments\":{\"path\":\"/../etc/passwd\"}}}");
     assert(strstr(r, "\"isError\":true"));
     printf("upload/files ok\n");
+}
+
+// Issues one /files request through the router; returns the raw HTTP response.
+static const char *do_files(const char *method, const char *target) {
+    static char resp[4096];
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    char req[1024];
+    int rn = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\n\r\n", method, target);
+    assert(rn > 0 && write(sv[1], req, (size_t)rn) == rn);
+    shutdown(sv[1], SHUT_WR);
+
+    static HttpRequest hreq;
+    assert(http_read_request(sv[0], &hreq));
+    http_server_dispatch(&kNoAuth, &hreq);
+    close(sv[0]);
+
+    size_t total = 0;
+    ssize_t n;
+    while ((n = read(sv[1], resp + total, sizeof(resp) - 1 - total)) > 0)
+        total += (size_t)n;
+    resp[total] = '\0';
+    close(sv[1]);
+    return resp;
+}
+
+static void test_move_file(void) {
+    system("rm -rf " FAKE_SD " && mkdir -p " FAKE_SD "/mv");
+    FILE *f = fopen(FAKE_SD "/mv/a.txt", "wb");
+    assert(f && fputs("abc", f) >= 0);
+    fclose(f);
+    f = fopen(FAKE_SD "/mv/taken.txt", "wb");
+    assert(f);
+    fclose(f);
+    struct stat st;
+
+    // Rename within the same directory.
+    const char *r = do_files("POST", "/files/move?path=/mv/a.txt&to=/mv/b.txt");
+    assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
+    assert(strstr(r, "\"moved\":\"/mv/a.txt\",\"to\":\"/mv/b.txt\""));
+    assert(stat(FAKE_SD "/mv/a.txt", &st) != 0);
+    assert(stat(FAKE_SD "/mv/b.txt", &st) == 0 && st.st_size == 3);
+
+    // Move into a directory that does not exist yet: parents are created.
+    r = do_files("POST", "/files/move?path=/mv/b.txt&to=/mv/sub/deep/c.txt");
+    assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/sub/deep/c.txt", &st) == 0);
+
+    // Directories move too.
+    r = do_files("POST", "/files/move?path=/mv/sub&to=/mv/renamed");
+    assert(strncmp(r, "HTTP/1.1 200 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/renamed/deep/c.txt", &st) == 0);
+
+    // Never overwrites an existing destination.
+    r = do_files("POST", "/files/move?path=/mv/renamed/deep/c.txt&to=/mv/taken.txt");
+    assert(strncmp(r, "HTTP/1.1 409 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/renamed/deep/c.txt", &st) == 0);
+
+    // Missing source, missing 'to', and traversal in 'to'.
+    r = do_files("POST", "/files/move?path=/mv/nope&to=/mv/x");
+    assert(strncmp(r, "HTTP/1.1 404 ", 13) == 0);
+    r = do_files("POST", "/files/move?path=/mv/taken.txt");
+    assert(strncmp(r, "HTTP/1.1 400 ", 13) == 0);
+    r = do_files("POST", "/files/move?path=/mv/taken.txt&to=/../escape");
+    assert(strncmp(r, "HTTP/1.1 400 ", 13) == 0);
+    assert(stat(FAKE_SD "/mv/taken.txt", &st) == 0);
+    printf("move ok\n");
 }
 
 static void test_hash_file(void) {
@@ -425,12 +514,106 @@ static void test_process_tools(void) {
     printf("process tools ok\n");
 }
 
+// The REST handler is covered by test_move_file above; this checks the tool
+// wrapper: argument plumbing, and errors arriving in-band rather than as HTTP
+// status codes.
+static void test_move_file_tool(void) {
+    system("rm -rf " FAKE_SD " && mkdir -p " FAKE_SD "/mv");
+    FILE *f = fopen(FAKE_SD "/mv/a.txt", "wb");
+    assert(f && fputs("abc", f) >= 0);
+    fclose(f);
+    struct stat st;
+
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":40,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"move_file\",\"arguments\":"
+                           "{\"path\":\"/mv/a.txt\",\"to\":\"/mv/sub/b.txt\"}}}");
+    assert(strstr(r, "\"isError\":false"));
+    assert(strstr(r, "moved to /mv/sub/b.txt"));
+    assert(stat(FAKE_SD "/mv/sub/b.txt", &st) == 0 && st.st_size == 3);
+
+    // Missing source.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":41,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":"
+               "{\"path\":\"/mv/nope\",\"to\":\"/mv/x\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+
+    // Never overwrites an existing destination (moving onto itself is a
+    // deliberate no-op, so it is not the case to test here).
+    f = fopen(FAKE_SD "/mv/taken.txt", "wb");
+    assert(f);
+    fclose(f);
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":"
+               "{\"path\":\"/mv/sub/b.txt\",\"to\":\"/mv/taken.txt\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(stat(FAKE_SD "/mv/sub/b.txt", &st) == 0);
+
+    // Missing destination, and traversal in it.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":43,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":{\"path\":\"/mv/sub/b.txt\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(strstr(r, "'to'"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":44,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"move_file\",\"arguments\":"
+               "{\"path\":\"/mv/sub/b.txt\",\"to\":\"/../escape\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(stat(FAKE_SD "/mv/sub/b.txt", &st) == 0);
+    printf("move_file tool ok\n");
+}
+
+static void test_touch_tools(void) {
+    stub_touch_count = 0;
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":30,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"tap_screen\",\"arguments\":"
+                           "{\"x\":640,\"y\":360,\"durationMs\":40}}}");
+    assert(strstr(r, "\"isError\":false"));
+    assert(stub_touch_count == 1);
+    assert(stub_touch_x == 640 && stub_touch_y == 360 && stub_touch_duration == 40);
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"swipe_screen\",\"arguments\":"
+               "{\"fromX\":200,\"fromY\":600,\"toX\":200,\"toY\":100}}}");
+    assert(strstr(r, "\"isError\":false"));
+    assert(stub_touch_count == 2);
+    assert(stub_swipe_from_x == 200 && stub_swipe_from_y == 600);
+    assert(stub_swipe_to_x == 200 && stub_swipe_to_y == 100);
+
+    // Off-panel coordinates are refused before reaching the console.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":32,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"tap_screen\",\"arguments\":{\"x\":1280,\"y\":0}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(strstr(r, "1279"));
+    assert(stub_touch_count == 2);
+
+    // Missing coordinates too.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":33,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"swipe_screen\",\"arguments\":{\"fromX\":0,\"fromY\":0}}}");
+    assert(strstr(r, "\"isError\":true"));
+    assert(stub_touch_count == 2);
+    printf("touch tools ok\n");
+}
+
 static Config g_cfg_for_oauth;
 
 int main(void) {
     snprintf(g_cfg_for_oauth.username, sizeof(g_cfg_for_oauth.username), "u");
     snprintf(g_cfg_for_oauth.password, sizeof(g_cfg_for_oauth.password), "p");
     oauth_init(&g_cfg_for_oauth);
+
+    // What source/features/feature_list.c does for the MCP-capable features.
+    files_http_register();
+    mcp_server_http_register();
+    screen_mcp_register();
+    input_mcp_register();
+    status_mcp_register();
+    files_mcp_register();
+    oauth_mcp_register();
+    power_mcp_register();
+    process_mcp_register();
+    settings_mcp_register();
+    titles_mcp_register();
+    network_mcp_register();
+
     test_initialize();
     test_notification();
     test_ping_and_errors();
@@ -439,11 +622,14 @@ int main(void) {
     test_tap_sequence();
     test_screenshot();
     test_upload_and_files();
+    test_move_file();
     test_hash_file();
     test_input_with_screenshot();
     test_create_token();
     test_power_tools();
     test_process_tools();
+    test_touch_tools();
+    test_move_file_tool();
     printf("all mcp tests passed\n");
     return 0;
 }

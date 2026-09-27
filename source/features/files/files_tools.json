@@ -1,0 +1,122 @@
+{
+  "$defs": {
+    "path": {
+      "type": "string",
+      "description": "Absolute path on the SD card, e.g. /switch/myapp/log.txt"
+    }
+  },
+  "tools": [
+    {
+      "name": "list_directory",
+      "description": "List a directory on the SD card. Returns JSON with name/type/size/mtime per entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "Read a text file from the SD card (logs, configs). Returns up to 32 KB per call; use offset/length to page through larger files. A negative offset reads from the end of the file (tail).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/path"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Byte offset; negative = from end of file."
+          },
+          "length": {
+            "type": "integer",
+            "description": "Max bytes to read (capped at 32768)."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "upload_file",
+      "description": "Write a file to the SD card. content is base64-encoded and is streamed to disk, so size is limited only by SD space - but large binaries are cheaper to deploy via the raw HTTP API (curl -T file 'http://<ip>:<port>/files?path=...').",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/path"
+          },
+          "content": {
+            "type": "string",
+            "description": "Base64-encoded file content."
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "move_file",
+      "description": "Rename or move a file or directory on the SD card. Parent directories of the destination are created; an existing destination is never overwritten.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/path"
+          },
+          "to": {
+            "type": "string",
+            "description": "Absolute destination path on the SD card, e.g. /switch/myapp/log.old.txt"
+          }
+        },
+        "required": [
+          "path",
+          "to"
+        ]
+      }
+    },
+    {
+      "name": "delete_file",
+      "description": "Delete a file or empty directory on the SD card.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/path"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "hash_file",
+      "description": "Compute the SHA-256 of a file on the SD card. The file is hashed in a streaming fashion (constant memory, any size), and only the 64-char hex digest is returned - not the file contents. Use this to verify an upload landed intact: pass the SHA-256 you expected as 'expected' and the result reports matched:true/false. Returns JSON: {algorithm, hash, size[, matched]}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/path"
+          },
+          "expected": {
+            "type": "string",
+            "description": "Optional expected SHA-256 hex digest. When provided, the result includes a 'matched' boolean (case-insensitive comparison)."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 // Host-side unit test for source/common/http.c (pure POSIX code).
-#include "http.h"
+#include "core/http.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

@@ -1,0 +1,252 @@
+{
+  "$defs": {
+    "buttons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Buttons to act on. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE."
+    },
+    "screenshot": {
+      "type": "boolean",
+      "description": "If true, the result also includes a screenshot taken after the input, saving a separate screenshot call."
+    },
+    "screenshotDelayMs": {
+      "type": "integer",
+      "description": "Delay before that screenshot in ms (lets the UI settle). Default 250."
+    }
+  },
+  "tools": [
+    {
+      "name": "tap_buttons",
+      "description": "Press and release controller buttons (synchronous). A virtual Pro Controller is attached automatically. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "buttons": {
+            "$ref": "#/$defs/buttons"
+          },
+          "durationMs": {
+            "type": "integer",
+            "description": "How long to hold before releasing, in ms. Default 100, max 10000."
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        },
+        "required": [
+          "buttons"
+        ]
+      }
+    },
+    {
+      "name": "tap_sequence",
+      "description": "Perform a sequence of button taps in one call, e.g. to navigate menus. Each step presses its buttons, holds, releases, then waits before the next step. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taps": {
+            "type": "array",
+            "maxItems": 32,
+            "description": "Sequence of taps (max 32).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "buttons": {
+                  "$ref": "#/$defs/buttons"
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "description": "Hold time in ms. Default 100."
+                },
+                "delayAfterMs": {
+                  "type": "integer",
+                  "description": "Pause after release in ms. Default 150."
+                }
+              },
+              "required": [
+                "buttons"
+              ]
+            }
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        },
+        "required": [
+          "taps"
+        ]
+      }
+    },
+    {
+      "name": "hold_buttons",
+      "description": "Press buttons and keep them held until release_buttons or clear_input. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "buttons": {
+            "$ref": "#/$defs/buttons"
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        },
+        "required": [
+          "buttons"
+        ]
+      }
+    },
+    {
+      "name": "release_buttons",
+      "description": "Release previously held buttons.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "buttons": {
+            "$ref": "#/$defs/buttons"
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        },
+        "required": [
+          "buttons"
+        ]
+      }
+    },
+    {
+      "name": "set_stick",
+      "description": "Set an analog stick position. x/y range -1.0..1.0 (y=1.0 is up). With durationMs the stick recenters afterwards; without it the position persists until changed or clear_input.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "side": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ]
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "durationMs": {
+            "type": "integer",
+            "description": "Hold time before recentering. Max 10000."
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        },
+        "required": [
+          "side"
+        ]
+      }
+    },
+    {
+      "name": "tap_screen",
+      "description": "Tap the touch screen at a pixel coordinate. Coordinates are in the same 1280x720 space as the screenshot tool, so you can read them straight off the image: x 0-1279 left to right, y 0-719 top to bottom. Only reaches the console in handheld mode (docked, the panel is off).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "integer",
+            "description": "0-1279, from the left edge."
+          },
+          "y": {
+            "type": "integer",
+            "description": "0-719, from the top edge."
+          },
+          "durationMs": {
+            "type": "integer",
+            "description": "How long the finger stays down. Default 100, min 32, max 10000. Raise it for a long press."
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "swipe_screen",
+      "description": "Drag a finger across the touch screen, e.g. to scroll a list or flick a page. Same 1280x720 coordinate space as the screenshot tool. The gesture is interpolated over durationMs, which is what makes scrolling register - a fast swipe flicks, a slow one drags.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fromX": {
+            "type": "integer",
+            "description": "Start x, 0-1279."
+          },
+          "fromY": {
+            "type": "integer",
+            "description": "Start y, 0-719."
+          },
+          "toX": {
+            "type": "integer",
+            "description": "End x, 0-1279."
+          },
+          "toY": {
+            "type": "integer",
+            "description": "End y, 0-719."
+          },
+          "durationMs": {
+            "type": "integer",
+            "description": "Time from start to end. Default 300, max 10000."
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        },
+        "required": [
+          "fromX",
+          "fromY",
+          "toX",
+          "toY"
+        ]
+      }
+    },
+    {
+      "name": "clear_input",
+      "description": "Release all held buttons and recenter both sticks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          }
+        }
+      }
+    }
+  ]
+}
