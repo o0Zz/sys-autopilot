@@ -67,7 +67,8 @@ bool http_check_basic_auth(const HttpRequest *req, const char *user, const char 
 // the header is absent or uses a different scheme.
 bool http_get_bearer(const HttpRequest *req, char *out, size_t outsz);
 
-// Response helpers. All use "Connection: close" semantics.
+// Response helpers. They advertise keep-alive or close as last set by
+// http_set_keep_alive().
 void http_send_header(int fd, int code, const char *content_type, size_t content_length);
 void http_send_response(int fd, int code, const char *content_type, const void *body, size_t len);
 void http_send_json(int fd, int code, const char *fmt, ...) __attribute__((format(printf, 3, 4)));

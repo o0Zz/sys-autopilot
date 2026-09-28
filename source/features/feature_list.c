@@ -62,7 +62,8 @@
 #endif
 
 void features_init(void) {
-    // lbl/audctl/psm for the settings endpoints (and the battery in /status).
+    // set:sys/lbl/audctl/psm for the settings endpoints (and the battery in
+    // /status).
     settings_init();
 
 #ifdef FEATURE_INSTALL
@@ -72,7 +73,7 @@ void features_init(void) {
 #endif
 
 #ifdef FEATURE_PROCESS
-    // pm:shell/pm:dmnt for starting, stopping and querying other programs.
+    // pm:shell for starting, stopping and querying other programs.
     if (!process_init())
         LOGF("process: pm unavailable; /process disabled\n");
 #endif

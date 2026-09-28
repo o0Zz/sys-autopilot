@@ -253,7 +253,6 @@ static Result write_content(NcmContentStorage *cs, const NcmContentId *cid,
     sha256_stream_init(&sha);
 
     u64 written = 0;
-    // Consume any pre-read bytes first.
     while (prelen > 0) {
         size_t n = prelen > INSTALL_CHUNK ? INSTALL_CHUNK : prelen;
         rc = ncmContentStorageWritePlaceHolder(cs, &phid, written, prebuf, n);
@@ -391,12 +390,10 @@ out:
 static bool read_exact(InstallReadFn read_fn, void *ctx, u8 *buf, size_t len,
                        u8 *prefix, size_t *prefix_len, uint64_t *consumed) {
     size_t got = 0;
-    // Consume any leftover pre-read prefix bytes first.
     if (prefix && *prefix_len > 0) {
         size_t take = *prefix_len < len ? *prefix_len : len;
         memcpy(buf, prefix, take);
         got += take;
-        // Shift the remaining prefix down.
         *prefix_len -= take;
         if (*prefix_len > 0) memmove(prefix, prefix + take, *prefix_len);
         *consumed += take;
@@ -522,8 +519,8 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
         }
     }
 
-    // 3. Parse the CNMT (from the now-registered meta NCA via its NCM path),
-    //    then register the content-meta DB entry + ticket + record.
+    // Parse the CNMT (from the now-registered meta NCA via its NCM path), then
+    // register the content-meta DB entry + ticket + record.
     PackagedContentMetaHeader pkg = {0};
     NcmContentInfo infos[MAX_FILES];
     int infos_n = 0;

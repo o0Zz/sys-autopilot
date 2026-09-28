@@ -21,7 +21,7 @@ typedef struct {
     uint64_t pid; // only meaningful when running
 } ProcessStatus;
 
-// Opens the pm:shell and pm:dmnt sessions. Must be called while an sm session
+// Opens the pm:shell session. Must be called while an sm session
 // is open (i.e. from __appInit for the sysmodule). Returns false when pm is
 // unavailable, e.g. in the dev .nro build; process_available() then stays false
 // and every call below fails cleanly.

@@ -163,8 +163,7 @@ static void handle_connection(int fd, const Config *cfg) {
     set_nonblocking(fd);
 
     // Serve multiple requests on one connection (HTTP/1.1 keep-alive). Bounded
-    // so a single client can't monopolize the single-threaded server; the next
-    // read blocks on the 10s http I/O timeout, so an idle peer disconnects. MCP
+    // so a single client can't monopolize the single-threaded server. MCP
     // clients reuse the socket across initialize -> initialized -> tools/list,
     // so closing after each response broke their transport.
     for (int served = 0; served < 64; served++) {
@@ -313,7 +312,7 @@ void http_server_run(const Config *cfg, HttpIdleCb idle) {
                     mdns_close(mdns_fd);
                     mdns_fd = -1;
                 }
-                    mdns_ready = false; // re-query the IP on the next iteration
+                mdns_ready = false; // re-query the IP on the next iteration
             }
         }
 

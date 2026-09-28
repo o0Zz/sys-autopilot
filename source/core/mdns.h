@@ -34,8 +34,9 @@ typedef struct {
 #include "core/config.h"
 
 // Populates `cfg` from the runtime configuration: instance/host names from
-// the configured hostname, the HTTP `port`, the local IPv4 (via gethostid()),
-// and the DNS-SD TXT record (version/path/auth/title/model/firmware/atmosphere).
+// the configured hostname, the HTTP `port`, the local IPv4 (from nifm), and the
+// DNS-SD TXT record (version, mdns_add_txt() pairs, auth, model, firmware,
+// atmosphere).
 // Returns false if the local IP could not be determined (discovery is then
 // skipped). On host builds this fills placeholder values and always succeeds.
 bool mdns_config_init(MdnsConfig *cfg, const Config *app_cfg);
@@ -72,7 +73,6 @@ int mdns_open(const MdnsConfig *cfg);
 // multicasts the response.
 void mdns_handle_readable(int fd, const MdnsConfig *cfg);
 
-// Sends an unsolicited announcement to the multicast group.
 // Sends an unsolicited announcement to the multicast group. Returns true if
 // the datagram was sent (false if the network isn't routable yet), so callers
 // can retry until an announcement actually goes out.

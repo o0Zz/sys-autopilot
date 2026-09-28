@@ -66,7 +66,7 @@ static void build_txt(MdnsConfig *cfg, const char *const *pairs) {
 }
 
 // Fills the name/port/TXT fields shared by every platform. The caller is
-// responsible for setting cfg->ipv4_be.
+// responsible for setting cfg->ipv4.
 static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
     const DeviceInfo *di = device_info_get();
     char name[64];

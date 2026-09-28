@@ -43,7 +43,7 @@ typedef struct {
 // contain at least the full header region. On success fills entries[] (up to
 // max_entries) and sets *out_count and *out_data_start (byte offset where file
 // data begins, relative to the start of the PFS0). Returns false on malformed
-// input. Pure function — no Switch dependencies.
+// input.
 bool pfs0_parse_header(const uint8_t *buf, size_t buf_len,
                        FsEntry *entries, int max_entries, int *out_count,
                        uint64_t *out_data_start, const char **err);
@@ -70,7 +70,7 @@ size_t hfs0_header_size(const uint8_t *buf16);
 // contain at least the full header region. On success fills entries[] (up to
 // max_entries) and sets *out_count and *out_data_start (byte offset where file
 // data begins, relative to the start of the HFS0). Returns false on malformed
-// input. Pure function — no Switch dependencies.
+// input.
 bool hfs0_parse_header(const uint8_t *buf, size_t buf_len,
                        FsEntry *entries, int max_entries, int *out_count,
                        uint64_t *out_data_start, const char **err);
@@ -79,15 +79,15 @@ bool hfs0_parse_header(const uint8_t *buf, size_t buf_len,
 
 #define XCI_HEAD_MAGIC 0x48454144u // "HEAD" read big-endian (bytes H,E,A,D)
 
-// Given the first bytes of a stream, detects the container. Sets *out_xci_root
-// to the absolute byte offset of the root HFS0 for XCI (0xF000 trimmed /
-// 0x10000 full). Returns one of CONTAINER_*.
 typedef enum {
     CONTAINER_UNKNOWN = 0,
     CONTAINER_NSP = 1,   // PFS0 at offset 0
     CONTAINER_XCI = 2,   // gamecard image (HEAD magic at 0x100 or 0x1100)
 } ContainerKind;
 
+// Given the first bytes of a stream, detects the container. Sets *out_xci_root
+// to the absolute byte offset of the root HFS0 for XCI (0xF000 trimmed /
+// 0x10000 full). Returns one of CONTAINER_*.
 // Needs at least 0x1104 bytes to distinguish trimmed vs full XCI; with fewer
 // bytes it can still detect NSP (PFS0@0) and trimmed XCI (HEAD@0x100).
 ContainerKind container_detect(const uint8_t *buf, size_t len,

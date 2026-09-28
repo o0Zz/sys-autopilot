@@ -10,7 +10,7 @@
 // is open) and torn down by settings_exit(). On host (test) builds the getters
 // return deterministic placeholders and setters succeed as no-ops.
 
-// Initializes the services used here (lbl, audctl, psm). set:sys and nifm are
+// Initializes the services used here (set:sys, lbl, audctl, psm). nifm is
 // initialized elsewhere. Best-effort: a service that fails to open simply
 // makes its corresponding get/set return false. Call from __appInit.
 void settings_init(void);
@@ -19,7 +19,7 @@ void settings_init(void);
 void settings_exit(void);
 
 // --- theme (UI color set) -----------------------------------------------------
-// theme is "light" or "dark".
+// *out_dark / dark: true for the dark theme, false for light.
 bool settings_get_theme(bool *out_dark);
 bool settings_set_theme(bool dark);
 
