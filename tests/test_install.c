@@ -59,7 +59,7 @@ static void test_basic(void) {
 
     assert(pfs0_header_size(buf) == hsize);
 
-    Pfs0Entry e[8];
+    FsEntry e[8];
     int count = 0;
     uint64_t data_start = 0;
     const char *err = NULL;
@@ -77,7 +77,7 @@ static void test_bad_magic(void) {
     uint8_t buf[64] = {0};
     memcpy(buf, "XXXX", 4);
     assert(pfs0_header_size(buf) == 0);
-    Pfs0Entry e[4]; int c; uint64_t ds; const char *err = NULL;
+    FsEntry e[4]; int c; uint64_t ds; const char *err = NULL;
     assert(!pfs0_parse_header(buf, sizeof(buf), e, 4, &c, &ds, &err));
     printf("  bad magic rejected: ok\n");
 }
@@ -87,7 +87,7 @@ static void test_too_many(void) {
     const char *names[] = { "a.nca", "b.nca", "c.nca" };
     uint64_t offs[] = {0, 1, 2}, sizes[] = {1, 1, 1};
     size_t hsize = build_pfs0(buf, names, offs, sizes, 3);
-    Pfs0Entry e[2]; int c; uint64_t ds; const char *err = NULL;
+    FsEntry e[2]; int c; uint64_t ds; const char *err = NULL;
     // max_entries=2 < 3 files -> reject.
     assert(!pfs0_parse_header(buf, hsize, e, 2, &c, &ds, &err));
     printf("  too-many-files rejected: ok\n");
@@ -95,7 +95,7 @@ static void test_too_many(void) {
 
 static void test_short(void) {
     uint8_t buf[8] = {0};
-    Pfs0Entry e[4]; int c; uint64_t ds; const char *err = NULL;
+    FsEntry e[4]; int c; uint64_t ds; const char *err = NULL;
     assert(!pfs0_parse_header(buf, 8, e, 4, &c, &ds, &err));
     printf("  short header rejected: ok\n");
 }
@@ -145,7 +145,7 @@ static void test_hfs0_basic(void) {
 
     assert(hfs0_header_size(buf) == hsize);
 
-    Hfs0Entry e[8];
+    FsEntry e[8];
     int count = 0;
     uint64_t data_start = 0;
     const char *err = NULL;
@@ -162,7 +162,7 @@ static void test_hfs0_bad_magic(void) {
     uint8_t buf[64] = {0};
     memcpy(buf, "PFS0", 4); // wrong magic for HFS0
     assert(hfs0_header_size(buf) == 0);
-    Hfs0Entry e[4]; int c; uint64_t ds; const char *err = NULL;
+    FsEntry e[4]; int c; uint64_t ds; const char *err = NULL;
     assert(!hfs0_parse_header(buf, sizeof(buf), e, 4, &c, &ds, &err));
     printf("  hfs0 bad magic rejected: ok\n");
 }

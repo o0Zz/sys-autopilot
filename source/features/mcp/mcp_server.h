@@ -11,11 +11,11 @@
 // POST /mcp. It knows no tool: features register theirs at startup (see
 // source/features/feature_list.c) and the server dispatches tools/call by name.
 
-// One tool: its name and its complete JSON definition (name, description,
-// inputSchema), as returned in tools/list. Generated from each feature's
-// *_tools.json by scripts/generate_resource.py.
+// One tool: its complete JSON definition (name, description, inputSchema), as
+// returned in tools/list. Generated from each feature's *_tools.json by
+// scripts/generate_resource.py, which puts the name first, so the schema
+// always starts with {"name":"<name>" and doubles as the name.
 typedef struct {
-    const char *name;
     const char *schema;
 } McpToolDef;
 

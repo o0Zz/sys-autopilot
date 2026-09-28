@@ -140,6 +140,15 @@ static int g_token_count;
 static time_t g_tokens_mtime;
 static bool g_tokens_loaded;
 
+// A tokens.txt line's first whitespace-delimited field is the token; the rest
+// is comment. Returns the token's length and points *tok at it.
+static size_t line_token(char *line, char **tok) {
+    char *t = line;
+    while (*t == ' ' || *t == '\t') t++;
+    *tok = t;
+    return strcspn(t, " \t\r\n#");
+}
+
 static void tokens_load(void) {
     g_token_count = 0;
     g_tokens_loaded = true;
@@ -153,10 +162,8 @@ static void tokens_load(void) {
         return;
     char line[256];
     while (g_token_count < MAX_TOKENS && fgets(line, sizeof(line), f)) {
-        // First whitespace-delimited field is the token; rest is comment.
-        char *tok = line;
-        while (*tok == ' ' || *tok == '\t') tok++;
-        size_t len = strcspn(tok, " \t\r\n#");
+        char *tok;
+        size_t len = line_token(line, &tok);
         if (len < 16 || len > TOKEN_HEX_LEN)
             continue;
         memcpy(g_tokens[g_token_count], tok, len);
@@ -182,11 +189,22 @@ static bool tokens_append(const char *token, const char *note) {
     char stamp[64] = "";
     time_t t = time(NULL);
     if (t > 1600000000) {
+        // Formatted by hand, not strftime: strftime drags newlib's timezone
+        // and scanf code (~45K) into the binary for this one line.
         struct tm tmv;
         gmtime_r(&t, &tmv);
-        strftime(stamp, sizeof(stamp), " issued %Y-%m-%dT%H:%M:%SZ", &tmv);
+        snprintf(stamp, sizeof(stamp), " issued %04d-%02d-%02dT%02d:%02d:%02dZ",
+                 tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+                 tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
     }
-    fprintf(f, "%s #%s %s\n", token, stamp, note ? note : "");
+    // fputs rather than fprintf, which pulls in newlib's float-capable
+    // FILE printf (~15K) that nothing else needs.
+    fputs(token, f);
+    fputs(" #", f);
+    fputs(stamp, f);
+    fputc(' ', f);
+    fputs(note ? note : "", f);
+    fputc('\n', f);
     fclose(f);
 
     struct stat st;
@@ -214,13 +232,7 @@ void oauth_init(const Config *cfg) {
 }
 
 bool oauth_revoke_token(const char *token) {
-    tokens_refresh();
-    bool known = false;
-    for (int i = 0; i < g_token_count; i++) {
-        if (http_secure_streq(token, g_tokens[i]))
-            known = true;
-    }
-    if (!known)
+    if (!oauth_token_valid(token))
         return false;
 
     // Rewrite the file without the revoked token's line (preserving other
@@ -228,8 +240,7 @@ bool oauth_revoke_token(const char *token) {
     FILE *in = fopen(OAUTH_TOKENS_PATH, "rb");
     if (!in)
         return false;
-    char tmp_path[280];
-    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", OAUTH_TOKENS_PATH);
+    static const char tmp_path[] = OAUTH_TOKENS_PATH ".tmp";
     FILE *out = fopen(tmp_path, "wb");
     if (!out) {
         fclose(in);
@@ -237,9 +248,8 @@ bool oauth_revoke_token(const char *token) {
     }
     char line[256];
     while (fgets(line, sizeof(line), in)) {
-        char *tok = line;
-        while (*tok == ' ' || *tok == '\t') tok++;
-        size_t len = strcspn(tok, " \t\r\n#");
+        char *tok;
+        size_t len = line_token(line, &tok);
         if (len == strlen(token) && memcmp(tok, token, len) == 0)
             continue; // drop this line
         fputs(line, out);
@@ -473,7 +483,7 @@ static void send_login_page(HttpRequest *req, const char *error,
 }
 
 static bool creds_configured(void) {
-    return g_cfg && g_cfg->username[0] != '\0' && g_cfg->password[0] != '\0';
+    return g_cfg && config_basic_enabled(g_cfg);
 }
 
 // Basic validation: non-empty, no whitespace/control chars (also prevents

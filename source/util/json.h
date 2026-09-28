@@ -41,6 +41,10 @@ bool json_get_int(const JsonDoc *doc, int tok, long long *out);
 bool json_get_double(const JsonDoc *doc, int tok, double *out);
 bool json_get_bool(const JsonDoc *doc, int tok, bool *out);
 
+// Integer value of `key` in object token obj, or fallback when the key is
+// absent or not an integer.
+int json_obj_int(const JsonDoc *doc, int obj, const char *key, int fallback);
+
 // Raw (still-escaped) token text, e.g. for echoing a JSON-RPC id. Includes
 // quotes for strings. Returns false if it doesn't fit.
 bool json_raw(const JsonDoc *doc, int tok, char *out, size_t outsz);

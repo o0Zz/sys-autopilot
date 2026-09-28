@@ -15,8 +15,7 @@ static void tool_create_token(McpCall *call) {
         mcp_reply_error(call, "failed to persist token");
         return;
     }
-    char host[160];
-    snprintf(host, sizeof(host), "%s", call->req->host[0] ? call->req->host : "<switch-ip>:<port>");
+    const char *host = call->req->host[0] ? call->req->host : "<switch-ip>:<port>";
     char text[640];
     snprintf(text, sizeof(text),
              "token: %s\n\n"

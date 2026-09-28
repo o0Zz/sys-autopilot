@@ -36,6 +36,9 @@ void config_load(Config *cfg);
 // True when auth should be enforced (username+password set, or token set).
 bool config_auth_enabled(const Config *cfg);
 
+// True when both username and password are set (HTTP Basic is offered).
+bool config_basic_enabled(const Config *cfg);
+
 // Resolves the mDNS/DNS-SD name to advertise into `out` (must be non-NULL,
 // cap > 0). Returns `out`. Uses cfg->hostname when set; otherwise builds
 // "switch-<last chars of serial>", or just "switch" if `serial` is NULL/empty.

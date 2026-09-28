@@ -32,11 +32,12 @@ typedef struct {
 
 #define PFS0_MAGIC 0x30534650u // "PFS0"
 
+// A file in a PFS0 or HFS0 partition.
 typedef struct {
     char     name[256];
     uint64_t offset; // offset of file data from the start of the data section
     uint64_t size;
-} Pfs0Entry;
+} FsEntry;
 
 // Parses a PFS0 header blob (header + file table + string table). `buf` must
 // contain at least the full header region. On success fills entries[] (up to
@@ -44,7 +45,7 @@ typedef struct {
 // data begins, relative to the start of the PFS0). Returns false on malformed
 // input. Pure function — no Switch dependencies.
 bool pfs0_parse_header(const uint8_t *buf, size_t buf_len,
-                       Pfs0Entry *entries, int max_entries, int *out_count,
+                       FsEntry *entries, int max_entries, int *out_count,
                        uint64_t *out_data_start, const char **err);
 
 // Returns the number of header bytes needed to parse the file table+string
@@ -60,12 +61,6 @@ size_t pfs0_header_size(const uint8_t *buf16);
 
 #define HFS0_MAGIC 0x30534648u // "HFS0"
 
-typedef struct {
-    char     name[256];
-    uint64_t offset; // offset of file data from the start of the data section
-    uint64_t size;
-} Hfs0Entry;
-
 // Returns the number of header bytes needed to parse the file table+string
 // table given the first 16 bytes (the fixed HFS0 header). Returns 0 if `buf16`
 // isn't a valid HFS0 header.
@@ -77,7 +72,7 @@ size_t hfs0_header_size(const uint8_t *buf16);
 // data begins, relative to the start of the HFS0). Returns false on malformed
 // input. Pure function — no Switch dependencies.
 bool hfs0_parse_header(const uint8_t *buf, size_t buf_len,
-                       Hfs0Entry *entries, int max_entries, int *out_count,
+                       FsEntry *entries, int max_entries, int *out_count,
                        uint64_t *out_data_start, const char **err);
 
 // --- XCI layout detection (pure) ---------------------------------------------

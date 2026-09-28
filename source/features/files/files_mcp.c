@@ -34,11 +34,7 @@ static void tool_list_directory(McpCall *call) {
     if (!get_path_arg(call, fspath, sizeof(fspath)))
         return;
 
-    // Trim a trailing slash (but keep the root "sdmc:/").
-    size_t plen = strlen(fspath);
-    size_t rootlen = strlen(FILES_ROOT) + 1;
-    if (plen > rootlen && fspath[plen - 1] == '/')
-        fspath[plen - 1] = '\0';
+    files_trim_slash(fspath);
 
     const char *err = NULL;
     size_t len = 0;
@@ -85,19 +81,9 @@ static void tool_read_file(McpCall *call) {
         return;
     }
 
-    long long fsize = (long long)st.st_size;
     long long offset = mcp_arg_int(call, "offset", 0);
     long long length = mcp_arg_int(call, "length", READ_FILE_MAX);
-    if (offset < 0) {
-        offset = fsize + offset;
-        if (offset < 0)
-            offset = 0;
-    }
-    if (offset > fsize)
-        offset = fsize;
-    long long avail = fsize - offset;
-    if (length < 0 || length > avail)
-        length = avail;
+    files_clamp_range((long long)st.st_size, &offset, &length);
     if (length > READ_FILE_MAX)
         length = READ_FILE_MAX;
 

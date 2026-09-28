@@ -29,7 +29,9 @@ void log_to_file(const char *fmt, ...) {
         return;
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(f, fmt, ap);
+    // Integer-only printf: log lines never print floats, and the float-
+    // capable vfprintf costs ~15K of code.
+    vfiprintf(f, fmt, ap);
     va_end(ap);
     fclose(f);
 }

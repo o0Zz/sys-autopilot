@@ -33,11 +33,7 @@ bool args_get_buttons(const JsonDoc *doc, int obj, uint64_t *out_mask,
 }
 
 int args_get_duration(const JsonDoc *doc, int obj, int fallback) {
-    long long v;
-    int tok = json_obj_get(doc, obj, "durationMs");
-    if (tok >= 0 && json_get_int(doc, tok, &v))
-        return (int)v;
-    return fallback;
+    return json_obj_int(doc, obj, "durationMs", fallback);
 }
 
 bool args_get_stick(const JsonDoc *doc, int obj, int *out_side, float *out_x,

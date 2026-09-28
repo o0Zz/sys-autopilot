@@ -1,5 +1,14 @@
 #include "features/titles/titles.h"
 
+const char *titles_storage_label(uint8_t storage_id) {
+    switch (storage_id) {
+        case 5: return "sd";
+        case 4: return "nand";
+        case 2: return "gamecard";
+        default: return "other";
+    }
+}
+
 #ifdef __SWITCH__
 #include <switch.h>
 #include <string.h>

@@ -24,4 +24,7 @@ typedef struct {
 // buffer of titles_work_size() bytes (about 150K; a request handler takes it
 // from request memory). (Host build: a stub that returns an empty list.)
 size_t titles_work_size(void);
+
+// Short label for a TitleInfo.storage_id: "sd", "nand", "gamecard" or "other".
+const char *titles_storage_label(uint8_t storage_id);
 void titles_list(TitleInfo *titles, int max, int *out_count, void *work);

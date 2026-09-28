@@ -44,7 +44,7 @@ static int g_tool_count;
 
 void mcp_server_register_tool(const McpToolDef *def, McpToolHandler handler) {
     if (g_tool_count >= MCP_MAX_TOOLS) {
-        LOGF("mcp: tool table full, dropping %s\n", def->name);
+        LOGF("mcp: tool table full, dropping %.64s\n", def->schema);
         return;
     }
     g_tools[g_tool_count++] = (Tool){ def, handler };
@@ -131,14 +131,21 @@ const char *mcp_call_streamed_content(McpCall *call, size_t *out_bytes, const ch
 
 // --- response helpers ----------------------------------------------------------
 
+// Writes the response envelope's opening, {"jsonrpc":"2.0","id":<id>,"<key>":,
+// into head[RPC_HEAD_MAX]. Returns its length.
+#define RPC_HEAD_MAX 96
+static size_t rpc_head(char *head, const char *id, const char *key) {
+    return (size_t)snprintf(head, RPC_HEAD_MAX, "{\"jsonrpc\":\"2.0\",\"id\":%s,\"%s\":",
+                            id, key);
+}
+
 // Sends {"jsonrpc":"2.0","id":<id>,"<key>":<value>} with exact Content-Length.
 static void send_rpc_value(int fd, const char *id, const char *key,
                            const char *value, size_t value_len) {
-    char head[96];
-    int hn = snprintf(head, sizeof(head), "{\"jsonrpc\":\"2.0\",\"id\":%s,\"%s\":",
-                      id, key);
-    http_send_header(fd, 200, "application/json", (size_t)hn + value_len + 1);
-    http_write_all(fd, head, (size_t)hn);
+    char head[RPC_HEAD_MAX];
+    size_t hn = rpc_head(head, id, key);
+    http_send_header(fd, 200, "application/json", hn + value_len + 1);
+    http_write_all(fd, head, hn);
     http_write_all(fd, value, value_len);
     http_write_all(fd, "}", 1);
 }
@@ -157,11 +164,11 @@ void mcp_reply_rpc_error(McpCall *call, int code, const char *msg) {
 static void send_result_stream(int fd, const char *id, const char *pre,
                                const char *payload, size_t payload_len,
                                const char *post) {
-    char head[96];
-    int hn = snprintf(head, sizeof(head), "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":", id);
-    size_t total = (size_t)hn + strlen(pre) + payload_len + strlen(post) + 1;
+    char head[RPC_HEAD_MAX];
+    size_t hn = rpc_head(head, id, "result");
+    size_t total = hn + strlen(pre) + payload_len + strlen(post) + 1;
     http_send_header(fd, 200, "application/json", total);
-    http_write_all(fd, head, (size_t)hn);
+    http_write_all(fd, head, hn);
     http_write_all(fd, pre, strlen(pre));
     if (payload_len > 0)
         http_write_all(fd, payload, payload_len);
@@ -220,17 +227,16 @@ static void send_image_result(McpCall *call, const char *text,
     static const char img_post[] = "\",\"mimeType\":\"image/jpeg\"}],\"isError\":false}";
     int fd = call->req->fd;
 
-    char head[96];
-    int hn = snprintf(head, sizeof(head), "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":",
-                      call->id);
-    size_t total = (size_t)hn + b64_encoded_len(size) + sizeof(img_post) - 1 + 1;
+    char head[RPC_HEAD_MAX];
+    size_t hn = rpc_head(head, call->id, "result");
+    size_t total = hn + b64_encoded_len(size) + sizeof(img_post) - 1 + 1;
     if (text)
         total += sizeof(TEXT_PRE) - 1 + strlen(text) + sizeof(img_pre) - 1;
     else
         total += sizeof(img_only_pre) - 1;
 
     http_send_header(fd, 200, "application/json", total);
-    http_write_all(fd, head, (size_t)hn);
+    http_write_all(fd, head, hn);
     if (text) {
         http_write_all(fd, TEXT_PRE, sizeof(TEXT_PRE) - 1);
         http_write_all(fd, text, strlen(text));
@@ -256,11 +262,7 @@ void mcp_reply_text_and_image(McpCall *call, const char *text,
 // --- arguments ----------------------------------------------------------------
 
 int mcp_arg_int(const McpCall *call, const char *key, int fallback) {
-    long long v;
-    int tok = json_obj_get(call->doc, call->args, key);
-    if (tok >= 0 && json_get_int(call->doc, tok, &v))
-        return (int)v;
-    return fallback;
+    return json_obj_int(call->doc, call->args, key, fallback);
 }
 
 bool mcp_arg_string(const McpCall *call, const char *key, char *out, size_t outsz) {
@@ -324,6 +326,14 @@ static void handle_tools_list(HttpRequest *req, const char *id) {
     send_rpc_value(req->fd, id, "result", out, pos);
 }
 
+// True if def is the tool called `name` (see McpToolDef for the layout).
+static bool tool_is(const McpToolDef *def, const char *name) {
+    static const char prefix[] = "{\"name\":\"";
+    const char *p = def->schema + sizeof(prefix) - 1;
+    size_t n = strlen(name);
+    return strncmp(p, name, n) == 0 && p[n] == '"';
+}
+
 static void handle_tools_call(HttpRequest *req, const char *id, const JsonDoc *doc,
                               int params, bool content_streamed) {
     char name[40] = "";
@@ -340,7 +350,7 @@ static void handle_tools_call(HttpRequest *req, const char *id, const JsonDoc *d
         .content_streamed = content_streamed,
     };
     for (int i = 0; i < g_tool_count; i++) {
-        if (strcmp(g_tools[i].def->name, name) == 0) {
+        if (tool_is(g_tools[i].def, name)) {
             g_tools[i].handler(&call);
             return;
         }

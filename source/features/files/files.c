@@ -173,6 +173,27 @@ bool files_move_path(const char *src, const char *dst, const char **err) {
     return true;
 }
 
+bool files_trim_slash(char *fspath) {
+    size_t plen = strlen(fspath);
+    if (plen <= strlen(FILES_ROOT) + 1 || fspath[plen - 1] != '/')
+        return false;
+    fspath[plen - 1] = '\0';
+    return true;
+}
+
+void files_clamp_range(long long fsize, long long *offset, long long *length) {
+    if (*offset < 0) {
+        *offset = fsize + *offset;
+        if (*offset < 0)
+            *offset = 0;
+    }
+    if (*offset > fsize)
+        *offset = fsize;
+    long long avail = fsize - *offset;
+    if (*length < 0 || *length > avail)
+        *length = avail;
+}
+
 bool files_hash_sha256(const char *fspath, void *buf, size_t buf_size,
                        char out_hex[65], long long *out_size, const char **err) {
     struct stat st;

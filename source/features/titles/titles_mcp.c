@@ -22,13 +22,10 @@ static void tool_list_installed_titles(McpCall *call) {
     if (count == 0)
         pos += (size_t)snprintf(text, TEXT_SIZE, "(no titles installed)");
     for (int i = 0; i < count && pos < TEXT_SIZE - 128; i++) {
-        const char *storage =
-            titles[i].storage_id == 5 ? "sd" :
-            titles[i].storage_id == 4 ? "nand" :
-            titles[i].storage_id == 2 ? "gamecard" : "other";
         pos += (size_t)snprintf(text + pos, TEXT_SIZE - pos,
             "%s%016llx  v%-6u  %-8s  %s", i ? "\n" : "",
-            (unsigned long long)titles[i].title_id, titles[i].version, storage,
+            (unsigned long long)titles[i].title_id, titles[i].version,
+            titles_storage_label(titles[i].storage_id),
             titles[i].name[0] ? titles[i].name : "(name unavailable)");
     }
     mcp_reply_text(call, text);

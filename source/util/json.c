@@ -136,6 +136,11 @@ bool json_get_int(const JsonDoc *doc, int tok, long long *out) {
     return true;
 }
 
+int json_obj_int(const JsonDoc *doc, int obj, const char *key, int fallback) {
+    long long v;
+    return json_get_int(doc, json_obj_get(doc, obj, key), &v) ? (int)v : fallback;
+}
+
 bool json_get_double(const JsonDoc *doc, int tok, double *out) {
     if (tok < 0 || tok >= doc->ntok || doc->tok[tok].type != JSMN_PRIMITIVE)
         return false;

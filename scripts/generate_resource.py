@@ -8,8 +8,8 @@ sits beside it:
       The page as one C string, kExplorerHtml.
 
   features/process/process_tools.json -> process_tools.h
-      One McpToolDef per MCP tool (kToolProcessStart, ...): its name and its
-      minified JSON definition, ready for mcp_server_register_tool(). Each
+      One McpToolDef per MCP tool (kToolProcessStart, ...): its minified JSON
+      definition, name first, ready for mcp_server_register_tool(). Each
       file's "$defs" hold property definitions shared by its tools; every
       "$ref": "#/$defs/<name>" is inlined, so clients never see a reference.
 
@@ -100,6 +100,10 @@ def generate_tools(path):
         where = "%s: tool %r" % (name, tname)
         if not tname or not isinstance(tname, str):
             raise SystemExit("%s: every tool needs a \"name\"" % name)
+        # The server matches tools/call names against the schema's leading
+        # {"name":"<name>", so the name must need no JSON escaping.
+        if not all(c.islower() or c.isdigit() or c == "_" for c in tname):
+            raise SystemExit("%s: name must be [a-z0-9_]" % where)
         if tname in seen:
             raise SystemExit("%s: duplicate tool" % where)
         seen.add(tname)
@@ -108,10 +112,10 @@ def generate_tools(path):
         if not isinstance(tool.get("inputSchema"), dict):
             raise SystemExit("%s: missing \"inputSchema\" object" % where)
 
-        payload = json.dumps(resolve_refs(tool, defs, where), separators=(",", ":"),
-                             ensure_ascii=False)
+        resolved = resolve_refs(tool, defs, where)
+        resolved = dict([("name", tname)] + [(k, v) for k, v in resolved.items() if k != "name"])
+        payload = json.dumps(resolved, separators=(",", ":"), ensure_ascii=False)
         lines.append("static const McpToolDef kTool%s = {" % camel(tname))
-        lines.append('    "%s",' % c_escape(tname))
         lines.extend(c_string_lines(payload))
         lines.append("};")
         lines.append("")

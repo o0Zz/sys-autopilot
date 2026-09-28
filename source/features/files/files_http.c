@@ -54,18 +54,7 @@ static void send_file(HttpRequest *req, const char *fspath, const struct stat *s
     if (http_query_get(req, "length", val, sizeof(val)))
         length = atoll(val);
 
-    long long fsize = (long long)st->st_size;
-    if (offset < 0) {
-        // Negative offset: read the last N bytes (tail).
-        offset = fsize + offset;
-        if (offset < 0)
-            offset = 0;
-    }
-    if (offset > fsize)
-        offset = fsize;
-    long long avail = fsize - offset;
-    if (length < 0 || length > avail)
-        length = avail;
+    files_clamp_range((long long)st->st_size, &offset, &length);
 
     char *buf = request_alloc(req, FILES_IO_BUF_SIZE);
     if (!buf) {
@@ -108,10 +97,7 @@ static void get_files(HttpRequest *req) {
     size_t rootlen = strlen(FILES_ROOT);
 
     // Trailing slash forces a directory interpretation.
-    size_t plen = strlen(fspath);
-    bool want_dir = plen > rootlen + 1 && fspath[plen - 1] == '/';
-    if (want_dir)
-        fspath[plen - 1] = '\0'; // stat without trailing slash
+    bool want_dir = files_trim_slash(fspath); // stat without trailing slash
 
     struct stat st;
     if (stat(fspath, &st) != 0) {

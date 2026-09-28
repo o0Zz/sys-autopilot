@@ -7,16 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-// Maps an NcmStorageId to the short label used in the JSON response.
-static const char *storage_label(uint8_t storage_id) {
-    switch (storage_id) {
-        case 5: return "sd";
-        case 4: return "nand";
-        case 2: return "gamecard";
-        default: return "other";
-    }
-}
-
 // GET /titles
 static void get_titles(HttpRequest *req) {
     // Each JSON entry is well under 256 bytes; TITLES_MAX entries fit.
@@ -39,7 +29,7 @@ static void get_titles(HttpRequest *req) {
         pos += (size_t)snprintf(body + pos, BODY_SIZE - pos,
             "%s{\"titleId\":\"%016llx\",\"version\":%u,\"storage\":\"%s\",\"name\":\"%s\"}",
             i ? "," : "", (unsigned long long)titles[i].title_id,
-            titles[i].version, storage_label(titles[i].storage_id), name);
+            titles[i].version, titles_storage_label(titles[i].storage_id), name);
     }
     pos += (size_t)snprintf(body + pos, BODY_SIZE - pos, "]}");
     http_send_response(req->fd, 200, "application/json", body, pos);

@@ -332,19 +332,26 @@ bool http_get_bearer(const HttpRequest *req, char *out, size_t outsz) {
 
 // --- Responses ---------------------------------------------------------------
 
-void http_send_header(int fd, int code, const char *content_type, size_t content_length) {
-    char hdr[512];
+// `extra` holds whole header lines (CRLF-terminated) placed after the CORS one.
+static void send_header_extra(int fd, int code, const char *content_type,
+                              size_t content_length, const char *extra) {
+    char hdr[768];
     int n = snprintf(hdr, sizeof(hdr),
                      "HTTP/1.1 %d %s\r\n"
                      "Server: sys-autopilot\r\n"
                      "Access-Control-Allow-Origin: *\r\n"
+                     "%s"
                      "Content-Type: %s\r\n"
                      "Content-Length: %zu\r\n"
                      "%s"
                      "\r\n",
-                     code, status_reason(code), content_type, content_length,
+                     code, status_reason(code), extra, content_type, content_length,
                      conn_hdr());
     http_write_all(fd, hdr, (size_t)n);
+}
+
+void http_send_header(int fd, int code, const char *content_type, size_t content_length) {
+    send_header_extra(fd, code, content_type, content_length, "");
 }
 
 void http_send_redirect(int fd, const char *location) {
@@ -406,17 +413,6 @@ void http_send_unauthorized(const HttpRequest *req, bool offer_basic,
                        "WWW-Authenticate: Bearer realm=\"sys-autopilot\"\r\n");
     }
     challenges[cn] = '\0';
-    char hdr[768];
-    int n = snprintf(hdr, sizeof(hdr),
-                     "HTTP/1.1 401 Unauthorized\r\n"
-                     "Server: sys-autopilot\r\n"
-                     "Access-Control-Allow-Origin: *\r\n"
-                     "%s"
-                     "Content-Type: application/json\r\n"
-                     "Content-Length: %zu\r\n"
-                     "%s"
-                     "\r\n",
-                     challenges, strlen(body), conn_hdr());
-    http_write_all(req->fd, hdr, (size_t)n);
+    send_header_extra(req->fd, 401, "application/json", strlen(body), challenges);
     http_write_all(req->fd, body, strlen(body));
 }

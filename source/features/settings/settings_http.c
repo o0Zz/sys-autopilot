@@ -140,15 +140,6 @@ static void handle_auto_time(HttpRequest *req) {
         http_send_json(req->fd, 200, "{\"ok\":true,\"autoTime\":%s}", en ? "true" : "false");
 }
 
-// Reads an integer field from a JSON object; returns def if absent/invalid.
-static int field_int(const JsonDoc *doc, const char *key, int def) {
-    int t = json_obj_get(doc, 0, key);
-    long long v;
-    if (t >= 0 && json_get_int(doc, t, &v))
-        return (int)v;
-    return def;
-}
-
 // GET|POST /settings/datetime  {"year":..,"month":..,...} (any subset)
 static void handle_datetime(HttpRequest *req) {
     DateTime dt = {0};
@@ -170,12 +161,12 @@ static void handle_datetime(HttpRequest *req) {
         return;
 
     settings_get_datetime(&dt);
-    dt.year   = field_int(doc, "year",   dt.year);
-    dt.month  = field_int(doc, "month",  dt.month);
-    dt.day    = field_int(doc, "day",    dt.day);
-    dt.hour   = field_int(doc, "hour",   dt.hour);
-    dt.minute = field_int(doc, "minute", dt.minute);
-    dt.second = field_int(doc, "second", dt.second);
+    dt.year   = json_obj_int(doc, 0, "year",   dt.year);
+    dt.month  = json_obj_int(doc, 0, "month",  dt.month);
+    dt.day    = json_obj_int(doc, 0, "day",    dt.day);
+    dt.hour   = json_obj_int(doc, 0, "hour",   dt.hour);
+    dt.minute = json_obj_int(doc, 0, "minute", dt.minute);
+    dt.second = json_obj_int(doc, 0, "second", dt.second);
 
     if (!settings_datetime_valid(&dt)) {
         http_send_error(req->fd, 400, "invalid date/time fields");

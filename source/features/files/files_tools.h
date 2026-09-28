@@ -4,14 +4,12 @@
 #include "features/mcp/mcp_server.h"
 
 static const McpToolDef kToolListDirectory = {
-    "list_directory",
     "{\"name\":\"list_directory\",\"description\":\"List a directory on the SD card. Returns JSON with name/type"
     "/size/mtime per entry.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"descri"
     "ption\":\"Absolute path on the SD card, e.g. /switch/myapp/log.txt\"}},\"required\":[\"path\"]}}"
 };
 
 static const McpToolDef kToolReadFile = {
-    "read_file",
     "{\"name\":\"read_file\",\"description\":\"Read a text file from the SD card (logs, configs). Returns up to "
     "32 KB per call; use offset/length to page through larger files. A negative offset reads from the end"
     " of the file (tail).\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"descript"
@@ -21,7 +19,6 @@ static const McpToolDef kToolReadFile = {
 };
 
 static const McpToolDef kToolUploadFile = {
-    "upload_file",
     "{\"name\":\"upload_file\",\"description\":\"Write a file to the SD card. content is base64-encoded and is s"
     "treamed to disk, so size is limited only by SD space - but large binaries are cheaper to deploy via "
     "the raw HTTP API (curl -T file 'http://<ip>:<port>/files?path=...').\",\"inputSchema\":{\"type\":\"object\""
@@ -31,7 +28,6 @@ static const McpToolDef kToolUploadFile = {
 };
 
 static const McpToolDef kToolMoveFile = {
-    "move_file",
     "{\"name\":\"move_file\",\"description\":\"Rename or move a file or directory on the SD card. Parent directo"
     "ries of the destination are created; an existing destination is never overwritten.\",\"inputSchema\":{\""
     "type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Absolute path on the SD card, e."
@@ -40,14 +36,12 @@ static const McpToolDef kToolMoveFile = {
 };
 
 static const McpToolDef kToolDeleteFile = {
-    "delete_file",
     "{\"name\":\"delete_file\",\"description\":\"Delete a file or empty directory on the SD card.\",\"inputSchema\""
     ":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Absolute path on the SD card,"
     " e.g. /switch/myapp/log.txt\"}},\"required\":[\"path\"]}}"
 };
 
 static const McpToolDef kToolHashFile = {
-    "hash_file",
     "{\"name\":\"hash_file\",\"description\":\"Compute the SHA-256 of a file on the SD card. The file is hashed "
     "in a streaming fashion (constant memory, any size), and only the 64-char hex digest is returned - no"
     "t the file contents. Use this to verify an upload landed intact: pass the SHA-256 you expected as 'e"

@@ -1,6 +1,7 @@
 #include "core/mdns.h"
 #include "platform/device_info.h"
 #include "platform/netif.h"
+#include "core/log.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -39,7 +40,7 @@ static int fqdn(char *buf, size_t cap, const MdnsConfig *cfg) {
 // "auth" TXT value reflecting the configured authentication scheme. A feature
 // that offers more (the OAuth login) overrides it with mdns_add_txt("auth=...").
 static const char *auth_kind(const Config *app_cfg) {
-    if (app_cfg->username[0] != '\0' && app_cfg->password[0] != '\0')
+    if (config_basic_enabled(app_cfg))
         return "basic";
     if (app_cfg->token[0] != '\0')
         return "token";
@@ -86,20 +87,25 @@ static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
     mdns_build_txt(cfg, pairs);
 }
 
-#ifndef __SWITCH__
-// Host/test build: netif returns a fixed placeholder so the wire-format
-// helpers can be exercised deterministically.
+// (On the host, netif returns a fixed placeholder so the wire-format helpers
+// can be exercised deterministically.)
 bool mdns_config_init(MdnsConfig *cfg, const Config *app_cfg) {
     mdns_fill_common(cfg, app_cfg);
+    // Learn our LAN IPv4 from nifm (gethostid() returns loopback in a
+    // sysmodule). The value is a struct in_addr.s_addr (network byte order);
+    // decode octets via its byte layout, which is endianness-proof. Before
+    // DHCP completes this returns false, and the server loop keeps retrying.
     uint32_t s_addr = 0;
     if (!netif_current_ipv4(&s_addr))
-        return false;
-    const uint8_t *o = (const uint8_t *)&s_addr;
+        return false; // not ready yet; the server loop retries
+
+    const uint8_t *o = (const uint8_t *)&s_addr; // o[0]=octet1 ... o[3]=octet4
     cfg->ipv4 = ((uint32_t)o[0] << 24) | ((uint32_t)o[1] << 16) |
                 ((uint32_t)o[2] << 8) | (uint32_t)o[3];
+    LOGF("mdns: config ready ip=%u.%u.%u.%u host=%s\n",
+         o[0], o[1], o[2], o[3], cfg->host);
     return true;
 }
-#endif
 
 // DNS record type / class constants.
 #define DNS_TYPE_A    1
@@ -193,11 +199,7 @@ static void emit_a(Writer *w, const MdnsConfig *cfg) {
                           DNS_CLASS_IN | DNS_CLASS_FLUSH, TTL_HOST);
     // ipv4 is stored host-order with octet 1 in the high byte; emit the four
     // octets big-endian (network order) regardless of machine endianness.
-    uint32_t v = cfg->ipv4;
-    w_u8(w, (uint8_t)(v >> 24));
-    w_u8(w, (uint8_t)(v >> 16));
-    w_u8(w, (uint8_t)(v >> 8));
-    w_u8(w, (uint8_t)(v & 0xFF));
+    w_u32(w, cfg->ipv4);
     w_rr_patch(w, at);
 }
 
@@ -445,32 +447,20 @@ size_t mdns_build_announcement(const MdnsConfig *cfg,
 #include <arpa/inet.h>
 #include <switch.h>
 
-#include "core/log.h"
-
-bool mdns_config_init(MdnsConfig *cfg, const Config *app_cfg) {
-    mdns_fill_common(cfg, app_cfg);
-    // Learn our LAN IPv4 from nifm (gethostid() returns loopback in a
-    // sysmodule). The value is a struct in_addr.s_addr (network byte order);
-    // decode octets via its byte layout, which is endianness-proof. Before
-    // DHCP completes this returns false, and the server loop keeps retrying.
-    uint32_t s_addr = 0;
-    if (!netif_current_ipv4(&s_addr))
-        return false; // not ready yet; the server loop retries
-
-    const uint8_t *o = (const uint8_t *)&s_addr; // o[0]=octet1 ... o[3]=octet4
-    cfg->ipv4 = ((uint32_t)o[0] << 24) | ((uint32_t)o[1] << 16) |
-                ((uint32_t)o[2] << 8) | (uint32_t)o[3];
-    LOGF("mdns: config ready ip=%u.%u.%u.%u host=%s\n",
-         o[0], o[1], o[2], o[3], cfg->host);
-    return true;
-}
-
 static struct sockaddr_in mdns_group(void) {
     struct sockaddr_in a = {0};
     a.sin_family = AF_INET;
     a.sin_port = htons(MDNS_PORT);
     a.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR);
     return a;
+}
+
+// Joins (IP_ADD_MEMBERSHIP) or leaves (IP_DROP_MEMBERSHIP) the mDNS group.
+static int group_membership(int fd, int op) {
+    struct ip_mreq mreq = {0};
+    mreq.imr_multiaddr.s_addr = inet_addr(MDNS_MULTICAST_ADDR);
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    return setsockopt(fd, IPPROTO_IP, op, &mreq, sizeof(mreq));
 }
 
 int mdns_open(const MdnsConfig *cfg) {
@@ -496,10 +486,7 @@ int mdns_open(const MdnsConfig *cfg) {
         return -1;
     }
 
-    struct ip_mreq mreq = {0};
-    mreq.imr_multiaddr.s_addr = inet_addr(MDNS_MULTICAST_ADDR);
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-    if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) != 0)
+    if (group_membership(fd, IP_ADD_MEMBERSHIP) != 0)
         LOGF("mdns: join group failed (errno=%d); continuing\n", errno);
 
     int flags = fcntl(fd, F_GETFL, 0);
@@ -558,10 +545,7 @@ bool mdns_announce(int fd, const MdnsConfig *cfg) {
 void mdns_close(int fd) {
     if (fd < 0)
         return;
-    struct ip_mreq mreq = {0};
-    mreq.imr_multiaddr.s_addr = inet_addr(MDNS_MULTICAST_ADDR);
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-    setsockopt(fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
+    group_membership(fd, IP_DROP_MEMBERSHIP);
     close(fd);
 }
 #endif // __SWITCH__

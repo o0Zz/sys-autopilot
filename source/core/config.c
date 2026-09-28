@@ -137,9 +137,12 @@ void config_load(Config *cfg) {
          cfg->keep_awake ? "on" : "off");
 }
 
+bool config_basic_enabled(const Config *cfg) {
+    return cfg->username[0] != '\0' && cfg->password[0] != '\0';
+}
+
 bool config_auth_enabled(const Config *cfg) {
-    return cfg->token[0] != '\0' ||
-           (cfg->username[0] != '\0' && cfg->password[0] != '\0');
+    return cfg->token[0] != '\0' || config_basic_enabled(cfg);
 }
 
 // Keeps only DNS-label-safe chars (alnum and '-'), lowercasing letters.

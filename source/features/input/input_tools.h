@@ -4,7 +4,6 @@
 #include "features/mcp/mcp_server.h"
 
 static const McpToolDef kToolTapButtons = {
-    "tap_buttons",
     "{\"name\":\"tap_buttons\",\"description\":\"Press and release controller buttons (synchronous). A virtual P"
     "ro Controller is attached automatically. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DO"
     "WN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"butto"
@@ -18,7 +17,6 @@ static const McpToolDef kToolTapButtons = {
 };
 
 static const McpToolDef kToolTapSequence = {
-    "tap_sequence",
     "{\"name\":\"tap_sequence\",\"description\":\"Perform a sequence of button taps in one call, e.g. to navigat"
     "e menus. Each step presses its buttons, holds, releases, then waits before the next step. Button nam"
     "es: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.\",\"i"
@@ -34,7 +32,6 @@ static const McpToolDef kToolTapSequence = {
 };
 
 static const McpToolDef kToolHoldButtons = {
-    "hold_buttons",
     "{\"name\":\"hold_buttons\",\"description\":\"Press buttons and keep them held until release_buttons or clea"
     "r_input. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK,"
     " HOME, CAPTURE.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"buttons\":{\"type\":\"array\",\"items\":{\"ty"
@@ -46,7 +43,6 @@ static const McpToolDef kToolHoldButtons = {
 };
 
 static const McpToolDef kToolReleaseButtons = {
-    "release_buttons",
     "{\"name\":\"release_buttons\",\"description\":\"Release previously held buttons.\",\"inputSchema\":{\"type\":\"ob"
     "ject\",\"properties\":{\"buttons\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Buttons to ac"
     "t on. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HO"
@@ -57,7 +53,6 @@ static const McpToolDef kToolReleaseButtons = {
 };
 
 static const McpToolDef kToolSetStick = {
-    "set_stick",
     "{\"name\":\"set_stick\",\"description\":\"Set an analog stick position. x/y range -1.0..1.0 (y=1.0 is up). "
     "With durationMs the stick recenters afterwards; without it the position persists until changed or cl"
     "ear_input.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"side\":{\"type\":\"string\",\"enum\":[\"left\",\"rig"
@@ -69,7 +64,6 @@ static const McpToolDef kToolSetStick = {
 };
 
 static const McpToolDef kToolTapScreen = {
-    "tap_screen",
     "{\"name\":\"tap_screen\",\"description\":\"Tap the touch screen at a pixel coordinate. Coordinates are in t"
     "he same 1280x720 space as the screenshot tool, so you can read them straight off the image: x 0-1279"
     " left to right, y 0-719 top to bottom. Only reaches the console in handheld mode (docked, the panel "
@@ -83,7 +77,6 @@ static const McpToolDef kToolTapScreen = {
 };
 
 static const McpToolDef kToolSwipeScreen = {
-    "swipe_screen",
     "{\"name\":\"swipe_screen\",\"description\":\"Drag a finger across the touch screen, e.g. to scroll a list o"
     "r flick a page. Same 1280x720 coordinate space as the screenshot tool. The gesture is interpolated o"
     "ver durationMs, which is what makes scrolling register - a fast swipe flicks, a slow one drags.\",\"in"
@@ -97,7 +90,6 @@ static const McpToolDef kToolSwipeScreen = {
 };
 
 static const McpToolDef kToolClearInput = {
-    "clear_input",
     "{\"name\":\"clear_input\",\"description\":\"Release all held buttons and recenter both sticks.\",\"inputSchem"
     "a\":{\"type\":\"object\",\"properties\":{\"screenshot\":{\"type\":\"boolean\",\"description\":\"If true, the result "
     "also includes a screenshot taken after the input, saving a separate screenshot call.\"},\"screenshotDe"

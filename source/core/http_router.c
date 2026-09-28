@@ -70,7 +70,7 @@ static bool path_is_public(const HttpRequest *req) {
 }
 
 static bool authorized(const Config *cfg, const HttpRequest *req, bool *out_basic_cfg) {
-    bool basic_cfg = cfg->username[0] != '\0' && cfg->password[0] != '\0';
+    bool basic_cfg = config_basic_enabled(cfg);
     *out_basic_cfg = basic_cfg;
     if (basic_cfg && http_check_basic_auth(req, cfg->username, cfg->password))
         return true;

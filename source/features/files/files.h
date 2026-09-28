@@ -20,6 +20,14 @@ bool files_resolve(const char *userpath, char *out, size_t outsz, const char **e
 // Creates all parent directories of fspath.
 void files_mkdirs_for(const char *fspath);
 
+// Strips a trailing '/' from fspath, except the root's own ("sdmc:/").
+// Returns true when one was stripped.
+bool files_trim_slash(char *fspath);
+
+// Clamps a read window to a file of fsize bytes. A negative *offset counts
+// from the end (tail); a negative *length means "to the end".
+void files_clamp_range(long long fsize, long long *offset, long long *length);
+
 // Builds a JSON directory listing (malloc'd, caller frees). NULL on error,
 // with *err set.
 char *files_build_listing(const char *fspath, const char *userpath,
