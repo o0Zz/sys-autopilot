@@ -2,7 +2,6 @@
 #include "features/input/buttons.h"
 
 #include <stdio.h>
-#include <string.h>
 #include <strings.h>
 
 bool args_get_buttons(const JsonDoc *doc, int obj, uint64_t *out_mask,

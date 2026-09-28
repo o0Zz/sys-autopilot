@@ -30,10 +30,7 @@ static void tool_process_status(McpCall *call) {
 
     ProcessStatus st;
     char msg[160];
-    if (!process_status(tid, &st)) {
-        mcp_reply_error(call, "status query failed");
-        return;
-    }
+    process_status(tid, &st);
     if (st.running)
         snprintf(msg, sizeof(msg), "%016llx is running (pid %llu)",
                  (unsigned long long)tid, (unsigned long long)st.pid);

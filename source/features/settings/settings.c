@@ -1,7 +1,6 @@
 #include "features/settings/settings.h"
 
 #include <stdio.h>
-#include <string.h>
 
 bool settings_datetime_valid(const DateTime *dt) {
     return dt->month >= 1 && dt->month <= 12 && dt->day >= 1 && dt->day <= 31 &&

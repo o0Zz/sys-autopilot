@@ -43,7 +43,7 @@ static size_t capture(const char *path, void (*handler)(HttpRequest *), const ch
 }
 
 static void send_unauthorized(HttpRequest *req) {
-    http_send_unauthorized(req, true, true, "/.well-known/oauth-protected-resource");
+    http_send_unauthorized(req, true, "/.well-known/oauth-protected-resource");
 }
 
 int main(void) {

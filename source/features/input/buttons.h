@@ -28,6 +28,3 @@
 
 // Case-insensitive button name -> mask. Returns false for unknown names.
 bool button_from_name(const char *name, uint64_t *out_mask);
-
-// Comma/space-free list helper used for documentation in error messages.
-const char *button_names_list(void);

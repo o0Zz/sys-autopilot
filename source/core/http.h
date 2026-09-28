@@ -59,10 +59,9 @@ ssize_t http_read_body(HttpRequest *req, void *buf, size_t len);
 // Constant-time string equality (for credentials/tokens).
 bool http_secure_streq(const char *a, const char *b);
 
-// Validate the Authorization header against expected credentials
-// (constant-time comparisons).
+// Validate a Basic Authorization header against expected credentials
+// (constant-time comparison).
 bool http_check_basic_auth(const HttpRequest *req, const char *user, const char *pass);
-bool http_check_bearer_auth(const HttpRequest *req, const char *token);
 
 // Extracts the value of a "Bearer" Authorization header. Returns false when
 // the header is absent or uses a different scheme.
@@ -76,7 +75,7 @@ void http_send_error(int fd, int code, const char *msg);
 // 401 with WWW-Authenticate challenges. When resource_metadata_path is set
 // (the OAuth feature provides it), the Bearer challenge points OAuth-capable
 // clients at that metadata document so they can run the browser login.
-void http_send_unauthorized(const HttpRequest *req, bool offer_basic, bool offer_bearer,
+void http_send_unauthorized(const HttpRequest *req, bool offer_basic,
                             const char *resource_metadata_path);
 
 // 302 redirect. location must not contain CR/LF.

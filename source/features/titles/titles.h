@@ -19,11 +19,9 @@ typedef struct {
 } TitleInfo;
 
 // Lists installed applications across the SD card, internal (NAND user), and
-// gamecard storages. Fills titles[] up to max, sets *out_count. Returns true on
-// success (an empty list is still success). On failure writes a short message
-// to err. `work` is a caller-owned buffer of titles_work_size() bytes (about
-// 150K; a request handler takes it from request memory). (Host build: a stub
-// that returns an empty list.)
+// gamecard storages. Fills titles[] up to max, sets *out_count. A storage that
+// cannot be read is skipped, so this never fails. `work` is a caller-owned
+// buffer of titles_work_size() bytes (about 150K; a request handler takes it
+// from request memory). (Host build: a stub that returns an empty list.)
 size_t titles_work_size(void);
-bool titles_list(TitleInfo *titles, int max, int *out_count, void *work,
-                 char *err, size_t errsz);
+void titles_list(TitleInfo *titles, int max, int *out_count, void *work);

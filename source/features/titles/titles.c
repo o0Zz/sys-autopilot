@@ -45,8 +45,7 @@ size_t titles_work_size(void) {
     return sizeof(TitlesWork);
 }
 
-bool titles_list(TitleInfo *titles, int max, int *out_count, void *work,
-                 char *err, size_t errsz) {
+void titles_list(TitleInfo *titles, int max, int *out_count, void *work) {
     int n = 0;
     NsApplicationControlData *ctrl = &((TitlesWork *)work)->ctrl;
     NcmApplicationContentMetaKey *keys = ((TitlesWork *)work)->keys;
@@ -80,24 +79,18 @@ bool titles_list(TitleInfo *titles, int max, int *out_count, void *work,
     }
 
     *out_count = n;
-    (void)err; (void)errsz;
     LOGF("titles: listed %d installed application(s)\n", n);
-    return true;
 }
 
 #else // !__SWITCH__ : host stub so the REST/MCP layer links in tests.
-
-#include <string.h>
 
 size_t titles_work_size(void) {
     return 1;
 }
 
-bool titles_list(TitleInfo *titles, int max, int *out_count, void *work,
-                 char *err, size_t errsz) {
-    (void)titles; (void)max; (void)work; (void)err; (void)errsz;
+void titles_list(TitleInfo *titles, int max, int *out_count, void *work) {
+    (void)titles; (void)max; (void)work;
     *out_count = 0;
-    return true;
 }
 
 #endif // __SWITCH__

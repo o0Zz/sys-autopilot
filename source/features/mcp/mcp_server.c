@@ -9,7 +9,6 @@
 #include "util/base64.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -43,13 +42,12 @@ typedef struct {
 static Tool g_tools[MCP_MAX_TOOLS];
 static int g_tool_count;
 
-bool mcp_server_register_tool(const McpToolDef *def, McpToolHandler handler) {
+void mcp_server_register_tool(const McpToolDef *def, McpToolHandler handler) {
     if (g_tool_count >= MCP_MAX_TOOLS) {
         LOGF("mcp: tool table full, dropping %s\n", def->name);
-        return false;
+        return;
     }
     g_tools[g_tool_count++] = (Tool){ def, handler };
-    return true;
 }
 
 // --- upload content sink -------------------------------------------------------

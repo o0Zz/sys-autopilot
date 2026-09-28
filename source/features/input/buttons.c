@@ -1,6 +1,5 @@
 #include "features/input/buttons.h"
 
-#include <string.h>
 #include <strings.h>
 
 typedef struct {
@@ -43,8 +42,4 @@ bool button_from_name(const char *name, uint64_t *out_mask) {
         }
     }
     return false;
-}
-
-const char *button_names_list(void) {
-    return "A,B,X,Y,L,R,ZL,ZR,PLUS,MINUS,UP,DOWN,LEFT,RIGHT,LSTICK,RSTICK,HOME,CAPTURE";
 }

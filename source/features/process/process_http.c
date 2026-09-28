@@ -51,10 +51,7 @@ static void get_status(HttpRequest *req) {
         return;
 
     ProcessStatus st;
-    if (!process_status(tid, &st)) {
-        send_process_error(req, "status query failed", 0);
-        return;
-    }
+    process_status(tid, &st);
     if (st.running)
         http_send_json(req->fd, 200,
                        "{\"titleId\":\"%016llx\",\"running\":true,\"pid\":\"%llu\"}",

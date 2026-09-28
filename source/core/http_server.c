@@ -1,14 +1,11 @@
 // The server loop: sockets, keep-alive, mDNS, sleep/wake and keep-awake.
 // Routing and authentication live in http_router.c.
 #include "core/http_server.h"
-#include "core/http.h"
 #include "core/log.h"
 #include "core/mdns.h"
 #include "platform/netif.h"
 #include "platform/power.h"
 
-#include <stdio.h>
-#include <string.h>
 #include <errno.h>
 #include <unistd.h>
 #include <poll.h>
@@ -187,7 +184,7 @@ static void handle_connection(int fd, const Config *cfg) {
 // Sleeps ~1s in 100ms slices, invoking the idle callback each slice so the
 // dev app stays responsive (input is sampled per idle call; a long sleep
 // would make button presses easy to miss). Returns false on idle shutdown.
-static bool retry_wait(HttpServerIdleCb idle) {
+static bool retry_wait(HttpIdleCb idle) {
     for (int i = 0; i < 10; i++) {
         if (idle && !idle())
             return false;
@@ -196,7 +193,7 @@ static bool retry_wait(HttpServerIdleCb idle) {
     return true;
 }
 
-void http_server_run(const Config *cfg, HttpServerIdleCb idle) {
+void http_server_run(const Config *cfg, HttpIdleCb idle) {
     int listen_fd = -1;
     int mdns_fd = -1;
     bool suspended = false;

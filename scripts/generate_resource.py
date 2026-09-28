@@ -39,7 +39,7 @@ def c_escape(s):
 
 def c_string_lines(payload, width=100):
     """A long single-line payload split into adjacent C string literals."""
-    return ['    "%s"' % c_escape(payload[i:i + width]) for i in range(0, len(payload), width)] or ['    ""']
+    return ['    "%s"' % c_escape(payload[i:i + width]) for i in range(0, len(payload), width)]
 
 
 def header_banner(src_name):

@@ -16,11 +16,7 @@ static void tool_list_installed_titles(McpCall *call) {
         return;
     }
     int count = 0;
-    char err[128] = {0};
-    if (!titles_list(titles, TITLES_MAX, &count, work, err, sizeof(err))) {
-        mcp_reply_error(call, err[0] ? err : "failed to list titles");
-        return;
-    }
+    titles_list(titles, TITLES_MAX, &count, work);
     size_t pos = 0;
     text[0] = '\0';
     if (count == 0)

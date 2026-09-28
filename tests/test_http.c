@@ -65,15 +65,16 @@ int main(void) {
     fd = feed("GET /status HTTP/1.1\r\n\r\n");
     assert(http_read_request(fd, &req));
     assert(!http_check_basic_auth(&req, "user", "pass"));
-    assert(!http_check_bearer_auth(&req, "sekrit"));
+    assert(!http_get_bearer(&req, val, sizeof(val)));
     close(fd);
 
     // 5b. Bearer token auth
     fd = feed("GET /status HTTP/1.1\r\nAuthorization: Bearer sekrit\r\n\r\n");
     assert(http_read_request(fd, &req));
-    assert(http_check_bearer_auth(&req, "sekrit"));
-    assert(!http_check_bearer_auth(&req, "sekri"));
-    assert(!http_check_bearer_auth(&req, "sekrit2"));
+    assert(http_get_bearer(&req, val, sizeof(val)));
+    assert(http_secure_streq(val, "sekrit"));
+    assert(!http_secure_streq(val, "sekri"));
+    assert(!http_secure_streq(val, "sekrit2"));
     assert(!http_check_basic_auth(&req, "user", "pass"));
     close(fd);
 

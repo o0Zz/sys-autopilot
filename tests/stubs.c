@@ -20,7 +20,6 @@ float stub_stick_x, stub_stick_y;
 bool stub_cleared;
 
 void input_suspend(void) {}
-void input_exit(void) {}
 Result input_attach(void) { return 0; }
 Result input_detach(void) { return 0; }
 bool input_is_attached(void) { return true; }

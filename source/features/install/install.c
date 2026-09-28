@@ -5,15 +5,8 @@
 
 // --- PFS0 header parsing (pure) ----------------------------------------------
 
-// On-disk PFS0 layout: Header(0x10) | FileEntry[count](0x18 each) |
-// string table(string_table_size) | file data.
-typedef struct {
-    uint32_t magic;
-    uint32_t file_count;
-    uint32_t string_table_size;
-    uint32_t reserved;
-} Pfs0Header;
-
+// On-disk PFS0 layout: Header(0x10: magic, file_count, string_table_size,
+// reserved) | FileEntry[count](0x18 each) | string table | file data.
 typedef struct {
     uint64_t data_offset;
     uint64_t data_size;
@@ -143,7 +136,7 @@ bool hfs0_parse_header(const uint8_t *buf, size_t buf_len,
 
 ContainerKind container_detect(const uint8_t *buf, size_t len,
                                uint64_t *out_xci_root) {
-    if (out_xci_root) *out_xci_root = 0;
+    *out_xci_root = 0;
     if (len >= 4 && rd_u32(buf) == PFS0_MAGIC)
         return CONTAINER_NSP;
     // XCI CardHeader magic "HEAD" is stored as the ASCII bytes H,E,A,D, i.e.
@@ -153,13 +146,13 @@ ContainerKind container_detect(const uint8_t *buf, size_t len,
     if (len >= 0x104 &&
         (((uint32_t)buf[0x100] << 24) | ((uint32_t)buf[0x101] << 16) |
          ((uint32_t)buf[0x102] << 8) | buf[0x103]) == XCI_HEAD_MAGIC) {
-        if (out_xci_root) *out_xci_root = 0xF000;
+        *out_xci_root = 0xF000;
         return CONTAINER_XCI;
     }
     if (len >= 0x1104 &&
         (((uint32_t)buf[0x1100] << 24) | ((uint32_t)buf[0x1101] << 16) |
          ((uint32_t)buf[0x1102] << 8) | buf[0x1103]) == XCI_HEAD_MAGIC) {
-        if (out_xci_root) *out_xci_root = 0x10000;
+        *out_xci_root = 0x10000;
         return CONTAINER_XCI;
     }
     return CONTAINER_UNKNOWN;
@@ -169,7 +162,6 @@ ContainerKind container_detect(const uint8_t *buf, size_t len,
 #include <switch.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <sys/stat.h>
 #include "core/log.h"
 #include "features/install/nx_ext.h"
 #include "util/sha256.h"
@@ -250,12 +242,6 @@ static void fail(InstallResult *r, int status, const char *fmt, ...) {
     LOGF("install: ERROR %s\n", r->message);
 }
 
-// A content we wrote to NCM (for rollback/registration).
-typedef struct {
-    NcmContentId id;
-    bool registered;
-} WrittenContent;
-
 // Every buffer the installer needs, provided by the caller in one piece for
 // the duration of install_stream().
 typedef struct {
@@ -277,7 +263,7 @@ typedef struct {
     u8 ext_hdr[0x80];
     u8 meta_blob[sizeof(NcmContentMetaHeader) + 0x80
                  + (MAX_FILES + 1) * sizeof(NcmContentInfo)];
-    WrittenContent written[MAX_FILES];
+    NcmContentId written[MAX_FILES];     // contents written to NCM, for rollback
     NsExtContentStorageRecord recs[64];
 } InstallWork;
 
@@ -463,7 +449,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     u8 *tik_buf = g_w->tik_buf; size_t tik_size = 0;
     u8 *cert_buf = g_w->cert_buf; size_t cert_size = 0;
 
-    WrittenContent *written = g_w->written;
+    NcmContentId *written = g_w->written;
     int written_n = 0;
     bool failed = false;
 
@@ -508,7 +494,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
             Result rc = write_content(&cs, &meta_cid, cnmt_nca_size, read_fn, ctx,
                                       cnmt_nca, cnmt_nca_size, true);
             if (R_FAILED(rc)) { fail(out, 500, "write meta nca failed (0x%x)", rc); failed = true; break; }
-            written[written_n].id = meta_cid; written[written_n].registered = true; written_n++;
+            written[written_n++] = meta_cid;
         } else if (is_tik) {
             if (entries[i].size > sizeof(g_w->tik_buf)) { fail(out, 400, "ticket too large"); failed = true; break; }
             size_t got = 0;
@@ -536,7 +522,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
                                       NULL, 0, verify);
             if (R_FAILED(rc)) { fail(out, 500, "write nca failed (0x%x)", rc); failed = true; break; }
             consumed += entries[i].size;
-            written[written_n].id = cid; written[written_n].registered = true; written_n++;
+            written[written_n++] = cid;
         } else {
             // Unknown entry: skip its bytes.
             uint64_t skip = entries[i].size;
@@ -589,7 +575,6 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
         mh.content_count = (u16)(infos_n + 1); // +1 = the meta NCA itself
         mh.content_meta_count = pkg.content_meta_count;
         mh.attributes = pkg.attributes;
-        mh.storage_id = 0;
         memcpy(meta_blob + pos, &mh, sizeof(mh)); pos += sizeof(mh);
         memcpy(meta_blob + pos, ext_hdr, ext_hdr_size); pos += ext_hdr_size;
 
@@ -647,7 +632,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
         NcmContentStorage rcs;
         if (R_SUCCEEDED(ncmOpenContentStorage(&rcs, sid))) {
             for (int i = 0; i < written_n; i++)
-                ncmContentStorageDelete(&rcs, &written[i].id);
+                ncmContentStorageDelete(&rcs, &written[i]);
             ncmContentStorageClose(&rcs);
         }
         return false;
@@ -770,12 +755,11 @@ static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
 
     // 2. Find the "secure" partition; its HFS0 begins at root_off + rdata +
     //    partition.offset (absolute in the stream).
-    uint64_t secure_abs = 0, secure_size = 0;
+    uint64_t secure_abs = 0;
     bool have_secure = false;
     for (int i = 0; i < rcount; i++) {
         if (strcasecmp(rparts[i].name, "secure") == 0) {
             secure_abs = root_off + rdata + rparts[i].offset;
-            secure_size = rparts[i].size;
             have_secure = true;
             break;
         }
@@ -804,7 +788,6 @@ static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
 
     // Absolute data offset of the secure partition's file region.
     uint64_t secure_data_abs = secure_abs + sdata;
-    (void)secure_size;
 
     InstallEntry *entries = g_w->entries;
     for (int i = 0; i < file_count; i++) {
@@ -828,9 +811,8 @@ static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
 static bool install_stream_with(InstallReadFn read_fn, void *ctx,
                                InstallStorage storage, InstallResult *out);
 
-bool install_stream(InstallReadFn read_fn, void *ctx, uint64_t total_size,
+bool install_stream(InstallReadFn read_fn, void *ctx,
                     InstallStorage storage, void *work, InstallResult *out) {
-    (void)total_size;
     g_w = work;
     bool ok = install_stream_with(read_fn, ctx, storage, out);
     g_w = NULL;
@@ -855,20 +837,18 @@ static bool install_stream_with(InstallReadFn read_fn, void *ctx,
     // pre-read prefix since the stream is forward-only.
     u8 *prefix = g_w->prefix;
     size_t prefix_len = 0;
-    uint64_t consumed = 0;
     while (prefix_len < sizeof(g_w->prefix)) {
         long nn = read_fn(ctx, prefix + prefix_len, sizeof(g_w->prefix) - prefix_len);
         if (nn <= 0) break; // small file (e.g. tiny NSP) — detect on what we have
         prefix_len += (size_t)nn;
     }
-    consumed = prefix_len;
 
     uint64_t xci_root = 0;
     ContainerKind kind = container_detect(prefix, prefix_len, &xci_root);
     if (kind == CONTAINER_NSP)
-        return install_nsp(read_fn, ctx, sid, prefix, prefix_len, consumed - prefix_len, out);
+        return install_nsp(read_fn, ctx, sid, prefix, prefix_len, 0, out);
     if (kind == CONTAINER_XCI)
-        return install_xci(read_fn, ctx, sid, xci_root, prefix, prefix_len, consumed - prefix_len, out);
+        return install_xci(read_fn, ctx, sid, xci_root, prefix, prefix_len, 0, out);
 
     fail(out, 400, "unrecognized container (need NSP/PFS0 or XCI)");
     return false;

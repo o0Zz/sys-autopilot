@@ -1,7 +1,6 @@
 #include "features/screen/screen.h"
 #include "core/log.h"
 
-#include <string.h>
 #include <strings.h>
 
 #define CAPTURE_TIMEOUT_NS 100000000ULL // 100ms

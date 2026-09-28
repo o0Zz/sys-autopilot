@@ -145,5 +145,5 @@ void features_exit(void) {
     install_exit();
 #endif
     settings_exit();
-    input_exit();
+    input_suspend();
 }

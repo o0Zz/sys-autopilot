@@ -64,7 +64,7 @@ int jstream_feed(Jstream *js, const char *data, size_t len) {
             size_t start = i;
             while (i < len && data[i] != '"' && data[i] != '\\')
                 i++;
-            if (js->sink && js->sink(data + start, i - start, js->sink_ctx) != 0)
+            if (js->sink(data + start, i - start, js->sink_ctx) != 0)
                 return js->err = JSTREAM_ESINK;
             continue;
         }
@@ -175,7 +175,6 @@ int jstream_finish(Jstream *js, bool *content_found) {
         return js->err;
     if (js->in_string || js->divert || js->depth != 0)
         return js->err = JSTREAM_EPARTIAL;
-    if (content_found)
-        *content_found = js->content_found;
+    *content_found = js->content_found;
     return 0;
 }

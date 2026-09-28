@@ -30,11 +30,7 @@ static void get_titles(HttpRequest *req) {
     }
 
     int count = 0;
-    char err[128] = {0};
-    if (!titles_list(titles, TITLES_MAX, &count, work, err, sizeof(err))) {
-        http_send_error(req->fd, 500, err[0] ? err : "failed to list titles");
-        return;
-    }
+    titles_list(titles, TITLES_MAX, &count, work);
 
     size_t pos = (size_t)snprintf(body, BODY_SIZE, "{\"titles\":[");
     for (int i = 0; i < count && pos < BODY_SIZE - 256; i++) {

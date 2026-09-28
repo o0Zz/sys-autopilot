@@ -129,7 +129,7 @@ void http_server_dispatch(const Config *cfg, HttpRequest *req) {
     bool basic_cfg = false;
     if (config_auth_enabled(cfg) && !path_is_public(req) &&
         !authorized(cfg, req, &basic_cfg)) {
-        http_send_unauthorized(req, basic_cfg, true, g_resource_metadata_path);
+        http_send_unauthorized(req, basic_cfg, g_resource_metadata_path);
     } else {
         route(req);
     }

@@ -1,16 +1,14 @@
 #include "features/install/nx_ext.h"
 
 #ifdef __SWITCH__
-#include <string.h>
 
 // --- ns: ApplicationManagerInterface ----------------------------------------
 
+// Open/close are paired by install_init/install_exit, which call each once
+// and only close what opened.
 static Service g_ns_app;
-static bool g_ns_app_ready;
 
 Result nsext_init(void) {
-    if (g_ns_app_ready)
-        return 0;
     Result rc = nsInitialize();
     if (R_FAILED(rc))
         return rc;
@@ -24,16 +22,12 @@ Result nsext_init(void) {
         nsExit();
         return rc;
     }
-    g_ns_app_ready = true;
     return 0;
 }
 
 void nsext_exit(void) {
-    if (!g_ns_app_ready)
-        return;
     serviceClose(&g_ns_app);
     nsExit();
-    g_ns_app_ready = false;
 }
 
 // ApplicationRecordType_Installed
@@ -73,23 +67,13 @@ Result nsext_delete_application_record(u64 app_id) {
 // --- es ----------------------------------------------------------------------
 
 static Service g_es;
-static bool g_es_ready;
 
 Result esext_init(void) {
-    if (g_es_ready)
-        return 0;
-    Result rc = smGetService(&g_es, "es");
-    if (R_FAILED(rc))
-        return rc;
-    g_es_ready = true;
-    return 0;
+    return smGetService(&g_es, "es");
 }
 
 void esext_exit(void) {
-    if (!g_es_ready)
-        return;
     serviceClose(&g_es);
-    g_es_ready = false;
 }
 
 Result esext_import_ticket(const void *tik, u64 tik_size,

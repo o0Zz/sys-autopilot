@@ -8,7 +8,6 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <errno.h>
-#include <unistd.h>
 #include <poll.h>
 #include <sys/socket.h>
 
@@ -320,12 +319,6 @@ bool http_check_basic_auth(const HttpRequest *req, const char *user, const char 
     return http_secure_streq(decoded, expected);
 }
 
-bool http_check_bearer_auth(const HttpRequest *req, const char *token) {
-    if (strncasecmp(req->auth, "Bearer ", 7) != 0)
-        return false;
-    return http_secure_streq(req->auth + 7, token);
-}
-
 bool http_get_bearer(const HttpRequest *req, char *out, size_t outsz) {
     if (strncasecmp(req->auth, "Bearer ", 7) != 0)
         return false;
@@ -391,7 +384,7 @@ void http_send_error(int fd, int code, const char *msg) {
     http_send_json(fd, code, "{\"error\":\"%s\"}", msg);
 }
 
-void http_send_unauthorized(const HttpRequest *req, bool offer_basic, bool offer_bearer,
+void http_send_unauthorized(const HttpRequest *req, bool offer_basic,
                             const char *resource_metadata_path) {
     const char *body = "{\"error\":\"unauthorized\"}";
     char challenges[384];
@@ -401,18 +394,16 @@ void http_send_unauthorized(const HttpRequest *req, bool offer_basic, bool offer
     if (offer_basic)
         cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
                        "WWW-Authenticate: Basic realm=\"sys-autopilot\"\r\n");
-    if (offer_bearer) {
-        if (req->host[0] && resource_metadata_path) {
-            // Point OAuth-capable MCP clients at the protected resource
-            // metadata so they can run the browser auth flow automatically.
-            cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
-                           "WWW-Authenticate: Bearer realm=\"sys-autopilot\", "
-                           "resource_metadata=\"http://%s%s\"\r\n",
-                           req->host, resource_metadata_path);
-        } else {
-            cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
-                           "WWW-Authenticate: Bearer realm=\"sys-autopilot\"\r\n");
-        }
+    if (req->host[0] && resource_metadata_path) {
+        // Point OAuth-capable MCP clients at the protected resource
+        // metadata so they can run the browser auth flow automatically.
+        cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
+                       "WWW-Authenticate: Bearer realm=\"sys-autopilot\", "
+                       "resource_metadata=\"http://%s%s\"\r\n",
+                       req->host, resource_metadata_path);
+    } else {
+        cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
+                       "WWW-Authenticate: Bearer realm=\"sys-autopilot\"\r\n");
     }
     challenges[cn] = '\0';
     char hdr[768];

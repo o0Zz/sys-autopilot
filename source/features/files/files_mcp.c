@@ -203,8 +203,7 @@ static void tool_hash_file(McpCall *call) {
 
     // Optional case-insensitive comparison against an expected digest.
     char expected[80];
-    bool have_expected = call->args >= 0 &&
-                         mcp_arg_string(call, "expected", expected, sizeof(expected));
+    bool have_expected = mcp_arg_string(call, "expected", expected, sizeof(expected));
 
     char msg[256];
     if (have_expected) {

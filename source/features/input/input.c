@@ -4,7 +4,6 @@
 
 #include <assert.h>
 #include <string.h>
-#include <strings.h>
 
 // buttons.h mirrors the libnx bit values so it stays host-testable; make
 // sure they can never drift.
@@ -75,7 +74,6 @@ static Result touch_push(u32 attributes, int x, int y) {
     HidTouchState st = {0};
     st.delta_time = (u64)TOUCH_FRAME_MS * 1000000ULL;
     st.attributes = attributes;
-    st.finger_id = 0;
     st.x = (u32)x;
     st.y = (u32)y;
     st.diameter_x = TOUCH_DIAMETER;
@@ -137,10 +135,6 @@ void input_suspend(void) {
     }
     memset(&g_state, 0, sizeof(g_state));
     g_state.battery_level = 4;
-}
-
-void input_exit(void) {
-    input_suspend();
 }
 
 Result input_attach(void) {

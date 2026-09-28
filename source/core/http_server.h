@@ -46,5 +46,4 @@ void http_server_dispatch(const Config *cfg, HttpRequest *req);
 // failures internally. `idle` is invoked roughly every 100ms and between
 // requests; returning false shuts the server down (used by the dev .nro app).
 // Pass NULL to run forever (sysmodule).
-typedef bool (*HttpServerIdleCb)(void);
-void http_server_run(const Config *cfg, HttpServerIdleCb idle);
+void http_server_run(const Config *cfg, HttpIdleCb idle);

@@ -73,10 +73,7 @@ bool process_available(void) {
     return g_initialized;
 }
 
-bool process_status(uint64_t program_id, ProcessStatus *out) {
-    if (!g_initialized || out == NULL)
-        return false;
-
+void process_status(uint64_t program_id, ProcessStatus *out) {
     // pm:dmnt accepts a single session and Atmosphere's own dmnt already holds
     // it, so it is not available here at all. Resolve the pid we were handed at
     // launch through pm:info instead: if it still maps to this program, the
@@ -94,7 +91,7 @@ bool process_status(uint64_t program_id, ProcessStatus *out) {
             LOGF("process: pminfoInitialize failed rc=0x%x\n", irc);
             out->running = false;
             out->pid = 0;
-            return true;
+            return;
         }
         u64 resolved = 0;
         Result rc = pminfoGetProgramId(&resolved, g_last_pid);
@@ -103,7 +100,7 @@ bool process_status(uint64_t program_id, ProcessStatus *out) {
         out->pid = out->running ? g_last_pid : 0;
         if (!out->running)
             g_last_pid = 0;
-        return true;
+        return;
     }
 
     u64 pid = 0;
@@ -120,7 +117,6 @@ bool process_status(uint64_t program_id, ProcessStatus *out) {
         out->running = false;
         out->pid = 0;
     }
-    return true;
 }
 
 // boot2 launches SD sysmodules while the system pool still has room. Launching
@@ -139,8 +135,7 @@ static void set_boost(u64 size) {
 }
 
 bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
-    if (out_rc)
-        *out_rc = 0;
+    *out_rc = 0;
     if (!g_initialized)
         return false;
 
@@ -172,20 +167,17 @@ bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
         if (g_boosted)
             set_boost(0);
         reopen_hiddbg();
-        if (out_rc)
-            *out_rc = rc;
+        *out_rc = rc;
         return false;
     }
     g_last_pid = pid;
     g_last_program_id = program_id;
-    if (out_pid)
-        *out_pid = pid;
+    *out_pid = pid;
     return true;
 }
 
 bool process_stop(uint64_t program_id, uint32_t *out_rc) {
-    if (out_rc)
-        *out_rc = 0;
+    *out_rc = 0;
     if (!g_initialized)
         return false;
 
@@ -193,8 +185,7 @@ bool process_stop(uint64_t program_id, uint32_t *out_rc) {
     if (R_FAILED(rc)) {
         LOGF("process: terminate %016llx failed rc=0x%x\n",
              (unsigned long long)program_id, rc);
-        if (out_rc)
-            *out_rc = rc;
+        *out_rc = rc;
         return false;
     }
     g_last_pid = 0;
@@ -205,25 +196,22 @@ bool process_stop(uint64_t program_id, uint32_t *out_rc) {
 }
 
 bool process_restart(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
-    if (out_rc)
-        *out_rc = 0;
+    *out_rc = 0;
     if (!g_initialized)
         return false;
 
     ProcessStatus st;
-    if (process_status(program_id, &st) && st.running) {
-        uint32_t stop_rc = 0;
-        if (!process_stop(program_id, &stop_rc)) {
-            if (out_rc)
-                *out_rc = stop_rc;
+    process_status(program_id, &st);
+    if (st.running) {
+        if (!process_stop(program_id, out_rc))
             return false;
-        }
 
         // Wait for the process to actually be gone before relaunching, so we
         // never hand the caller a pid from a launch that raced the teardown.
         u64 waited = 0;
         while (waited < RESTART_GRACE_NS) {
-            if (!process_status(program_id, &st) || !st.running)
+            process_status(program_id, &st);
+            if (!st.running)
                 break;
             svcSleepThread(RESTART_POLL_NS);
             waited += RESTART_POLL_NS;
@@ -250,30 +238,24 @@ bool process_init(void) { return false; }
 void process_exit(void) {}
 bool process_available(void) { return true; } // tools testable on host
 
-bool process_status(uint64_t program_id, ProcessStatus *out) {
-    if (out == NULL)
-        return false;
+void process_status(uint64_t program_id, ProcessStatus *out) {
     out->running = g_fake_running && g_fake_program_id == program_id;
     out->pid = out->running ? g_fake_pid : 0;
-    return true;
 }
 
 bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
-    if (out_rc)
-        *out_rc = 0;
+    *out_rc = 0;
     if (g_fake_running && g_fake_program_id == program_id)
         return false; // already running
     g_fake_running = true;
     g_fake_program_id = program_id;
     g_fake_pid = 0x42;
-    if (out_pid)
-        *out_pid = g_fake_pid;
+    *out_pid = g_fake_pid;
     return true;
 }
 
 bool process_stop(uint64_t program_id, uint32_t *out_rc) {
-    if (out_rc)
-        *out_rc = 0;
+    *out_rc = 0;
     if (!g_fake_running || g_fake_program_id != program_id)
         return false;
     g_fake_running = false;

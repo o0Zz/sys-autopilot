@@ -4,7 +4,6 @@
 #include <switch.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include "core/log.h"
 
 // Parse a dotted-quad IPv4 string into a NifmIpV4Address (a.b.c.d -> addr[0..3]).
@@ -103,7 +102,6 @@ bool network_set_dns(bool automatic, const char *primary, const char *secondary,
 
 #else // !__SWITCH__ : host stubs so the REST/MCP layer links in tests.
 
-#include <string.h>
 #include <stdio.h>
 
 bool network_get_dns(DnsConfig *out, char *err, size_t errsz) {

@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -218,7 +217,6 @@ bool files_hash_sha256(const char *fspath, void *buf, size_t buf_size,
     }
     out_hex[64] = '\0';
 
-    if (out_size)
-        *out_size = total;
+    *out_size = total;
     return true;
 }

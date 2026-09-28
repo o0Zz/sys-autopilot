@@ -29,9 +29,8 @@ bool process_init(void);
 void process_exit(void);
 bool process_available(void);
 
-// Liveness. Returns true on success and fills *out; a program that is simply
-// not running is a successful query with out->running == false.
-bool process_status(uint64_t program_id, ProcessStatus *out);
+// Liveness: fills *out. Call only when process_available().
+void process_status(uint64_t program_id, ProcessStatus *out);
 
 // Launches the program. *out_pid receives the new process id. On failure the
 // Horizon result is stored in *out_rc (0 when the failure was not a Result).

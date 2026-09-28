@@ -151,8 +151,8 @@ static void get_hash(HttpRequest *req) {
     long long size = 0;
     const char *err = NULL;
     if (!files_hash_sha256(fspath, buf, FILES_IO_BUF_SIZE, hexbuf, &size, &err)) {
-        int code = (err && strstr(err, "no such")) ? 404
-                 : (err && strstr(err, "directory")) ? 400
+        int code = strstr(err, "no such") ? 404
+                 : strstr(err, "directory") ? 400
                  : 500;
         http_send_error(req->fd, code, err);
         return;
@@ -225,7 +225,7 @@ static void delete_files(HttpRequest *req) {
 
     const char *err = NULL;
     if (!files_delete_path(fspath, &err)) {
-        http_send_error(req->fd, err && strstr(err, "no such") ? 404 : 500, err);
+        http_send_error(req->fd, strstr(err, "no such") ? 404 : 500, err);
         return;
     }
     http_send_json(req->fd, 200, "{\"deleted\":\"%s\"}", fspath + strlen(FILES_ROOT));

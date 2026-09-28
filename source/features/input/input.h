@@ -19,9 +19,6 @@
 // lazily on the next input request.
 void input_suspend(void);
 
-// Alias of input_suspend for shutdown paths. Call before hiddbgExit.
-void input_exit(void);
-
 // Attach/detach the virtual Pro Controller.
 Result input_attach(void);
 Result input_detach(void);

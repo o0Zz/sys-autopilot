@@ -182,27 +182,9 @@ void power_keepawake_tick(void) {
     }
 }
 
-#else // host (tests): no PSC / spsm / idle:sys
+#else // host (tests): no PSC / spsm / idle:sys; only what the tools query
 
-static PowerAction g_last_performed;
-
-bool power_init(void) { return false; }
-PowerEvent power_poll(void) { return PowerEvent_None; }
-void power_ack(void) {}
-void power_exit(void) {}
-
-bool power_spsm_init(void) { return false; }
-void power_spsm_exit(void) {}
 bool power_actions_available(void) { return true; } // tools testable on host
-
-bool power_perform(PowerAction action) {
-    g_last_performed = action;
-    return true;
-}
-
-bool power_keepawake_init(void) { return false; }
 bool power_keepawake_available(void) { return false; }
-void power_keepawake_exit(void) {}
-void power_keepawake_tick(void) {}
 
 #endif

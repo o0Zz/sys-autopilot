@@ -1,5 +1,4 @@
 #include "core/mdns.h"
-#include "core/config.h"
 #include "platform/device_info.h"
 #include "platform/netif.h"
 

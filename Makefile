@@ -13,7 +13,6 @@ include $(DEVKITPRO)/libnx/switch_rules
 # TARGET is the name of the output
 # BUILD is the directory where object files & intermediate files will be placed
 # SOURCES is a list of directories containing source code
-# DATA is a list of directories containing data files
 # INCLUDES is a list of directories containing header files
 #
 # CONFIG_JSON is the filename of the NPDM config file (.json), relative to the project folder.
@@ -22,8 +21,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	sys-autopilot
 BUILD		:=	build
-DATA		:=	data
-INCLUDES	:=	include lib/jsmn source
+INCLUDES	:=	lib/jsmn source
 
 # Features (source/features/<name>/). The first five are always built; the
 # optional ones are chosen here, e.g. `make FEATURES="explorer power"` for a
@@ -99,7 +97,7 @@ endef
 
 export DISCARD_EHFRAME_LD DISCARD_EHFRAME_SPECS
 
-LDFLAGS	=	-specs=discard-ehframe.specs -specs=$(DEVKITPRO)/libnx/switch.specs 			-g $(ARCH) -Wl,-Map,$(notdir $*.map)
+LDFLAGS	=	-specs=discard-ehframe.specs -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:= -lnx
 
@@ -120,15 +118,13 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
 export TOPDIR	:=	$(CURDIR)
 
-export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-			$(foreach dir,$(DATA),$(CURDIR)/$(dir))
+export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 
 export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
 CFILES		:=	$(filter-out $(EXCLUDED_FILES),$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))))
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 #---------------------------------------------------------------------------------
 # use CXX for linking C++ projects, CC for standard C
@@ -139,10 +135,7 @@ else
 	export LD	:=	$(CXX)
 endif
 
-export OFILES_BIN	:=	$(addsuffix .o,$(BINFILES))
-export OFILES_SRC	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
-export OFILES 	:=	$(OFILES_BIN) $(OFILES_SRC)
-export HFILES_BIN	:=	$(addsuffix .h,$(subst .,_,$(BINFILES)))
+export OFILES	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -200,16 +193,6 @@ discard-ehframe.ld:
 
 discard-ehframe.specs:
 	@printf '%s\n' "$$DISCARD_EHFRAME_SPECS" > $@
-
-$(OFILES_SRC)	: $(HFILES_BIN)
-
-#---------------------------------------------------------------------------------
-# you need a rule like this for each extension you use as binary data
-#---------------------------------------------------------------------------------
-%.bin.o	%_bin.h :	%.bin
-#---------------------------------------------------------------------------------
-	@echo $(notdir $<)
-	@$(bin2o)
 
 -include $(DEPENDS)
 

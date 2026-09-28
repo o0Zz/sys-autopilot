@@ -95,8 +95,6 @@ const DeviceInfo *device_info_get(void) {
 
 #else // host / test build: no Switch services available.
 
-void device_info_init(void) {}
-
 const DeviceInfo *device_info_get(void) {
     static const DeviceInfo info = {
         .model = "unknown",

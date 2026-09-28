@@ -31,7 +31,7 @@ static void handle_install(HttpRequest *req) {
     }
 
     InstallResult res;
-    install_stream(install_body_read, req, req->content_length, storage, work, &res);
+    install_stream(install_body_read, req, storage, work, &res);
 
     char esc[256];
     json_escape(res.message, strlen(res.message), esc, sizeof(esc));

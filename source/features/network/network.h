@@ -2,7 +2,6 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 
 // Network configuration (currently DNS) for the active connection profile.
 // Setting DNS requires the nifm:a (admin) service; reading the current config

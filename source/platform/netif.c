@@ -72,10 +72,6 @@ bool netif_ipv4_changed(void) {
 
 #else // host / test build
 
-bool netif_init(void) { return false; }
-void netif_exit(void) {}
-bool netif_ipv4_changed(void) { return false; }
-
 bool netif_current_ipv4(uint32_t *out_s_addr) {
     // 127.0.0.1 in network byte order, for deterministic host tests.
     *out_s_addr = 0x0100007f;
