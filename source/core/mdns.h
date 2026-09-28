@@ -45,11 +45,6 @@ bool mdns_config_init(MdnsConfig *cfg, const Config *app_cfg);
 // derived from the configuration. Returns false when the table is full.
 bool mdns_add_txt(const char *pair);
 
-// Builds the TXT rdata blob (each "key=value" prefixed by a 1-byte length)
-// into cfg->txt / cfg->txt_len. Pairs is a NULL-terminated array of strings
-// already formatted as "key=value"; empty/oversized entries are skipped.
-void mdns_build_txt(MdnsConfig *cfg, const char *const *pairs);
-
 // Given an incoming mDNS query packet (query, query_len), appends any matching
 // answer records to out (capacity out_cap) and returns the response length, or
 // 0 if nothing should be sent. Handles A (for cfg->host), PTR (for the service

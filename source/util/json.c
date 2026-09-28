@@ -24,12 +24,14 @@ static const char *tok_ptr(const JsonDoc *doc, int tok) {
     return doc->src + doc->tok[tok].start;
 }
 
-bool json_streq(const JsonDoc *doc, int tok, const char *s) {
+// True if tok is a string/primitive equal to s.
+static bool json_streq(const JsonDoc *doc, int tok, const char *s) {
     int len = tok_len(doc, tok);
     return (int)strlen(s) == len && memcmp(tok_ptr(doc, tok), s, (size_t)len) == 0;
 }
 
-int json_skip(const JsonDoc *doc, int tok) {
+// Index of the token following tok's entire subtree.
+static int json_skip(const JsonDoc *doc, int tok) {
     int end = doc->tok[tok].end;
     int i = tok + 1;
     while (i < doc->ntok && doc->tok[i].start < end)

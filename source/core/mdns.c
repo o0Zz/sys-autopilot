@@ -47,6 +47,24 @@ static const char *auth_kind(const Config *app_cfg) {
     return "none";
 }
 
+// Builds the TXT rdata blob (each "key=value" prefixed by a 1-byte length)
+// into cfg->txt / cfg->txt_len. Pairs is a NULL-terminated array of strings
+// already formatted as "key=value"; empty/oversized entries are skipped.
+static void build_txt(MdnsConfig *cfg, const char *const *pairs) {
+    size_t len = 0;
+    for (size_t i = 0; pairs && pairs[i]; i++) {
+        size_t plen = strlen(pairs[i]);
+        if (plen == 0 || plen > 255)
+            continue;
+        if (len + 1 + plen > sizeof(cfg->txt))
+            break;
+        cfg->txt[len++] = (uint8_t)plen;
+        memcpy(cfg->txt + len, pairs[i], plen);
+        len += plen;
+    }
+    cfg->txt_len = len;
+}
+
 // Fills the name/port/TXT fields shared by every platform. The caller is
 // responsible for setting cfg->ipv4_be.
 static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
@@ -84,7 +102,7 @@ static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
         pairs[n++] = ams;
     pairs[n] = NULL;
 
-    mdns_build_txt(cfg, pairs);
+    build_txt(cfg, pairs);
 }
 
 // (On the host, netif returns a fixed placeholder so the wire-format helpers
@@ -251,23 +269,6 @@ static void emit_txt(Writer *w, const MdnsConfig *cfg) {
         w_u8(w, 0); // a single empty string => valid empty TXT
     }
     w_rr_patch(w, at);
-}
-
-// --- public: TXT builder ------------------------------------------------------
-
-void mdns_build_txt(MdnsConfig *cfg, const char *const *pairs) {
-    size_t len = 0;
-    for (size_t i = 0; pairs && pairs[i]; i++) {
-        size_t plen = strlen(pairs[i]);
-        if (plen == 0 || plen > 255)
-            continue;
-        if (len + 1 + plen > sizeof(cfg->txt))
-            break;
-        cfg->txt[len++] = (uint8_t)plen;
-        memcpy(cfg->txt + len, pairs[i], plen);
-        len += plen;
-    }
-    cfg->txt_len = len;
 }
 
 // --- query parsing ------------------------------------------------------------

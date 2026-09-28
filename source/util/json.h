@@ -19,14 +19,8 @@ typedef struct {
 // Parses src (len bytes). Returns 0 on success, negative jsmn error otherwise.
 int json_parse(JsonDoc *doc, const char *src, size_t len);
 
-// True if tok is a string/primitive equal to s.
-bool json_streq(const JsonDoc *doc, int tok, const char *s);
-
 // Returns the token index of the value for `key` in object token obj, or -1.
 int json_obj_get(const JsonDoc *doc, int obj, const char *key);
-
-// Index of the token following tok's entire subtree (for array iteration).
-int json_skip(const JsonDoc *doc, int tok);
 
 // Number of elements in array token arr, or -1 if not an array.
 int json_arr_len(const JsonDoc *doc, int arr);
