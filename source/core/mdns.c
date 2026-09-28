@@ -34,7 +34,7 @@ static bool extra_txt_has_key(const char *key) {
 
 // Build "<instance>.<service>" (the DNS-SD instance FQDN).
 static int fqdn(char *buf, size_t cap, const MdnsConfig *cfg) {
-    return snprintf(buf, cap, "%s.%s", cfg->instance, cfg->service);
+    return snprintf(buf, cap, "%s." MDNS_SERVICE_TYPE, cfg->instance);
 }
 
 // "auth" TXT value reflecting the configured authentication scheme. A feature
@@ -75,7 +75,6 @@ static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
     memset(cfg, 0, sizeof(*cfg));
     snprintf(cfg->instance, sizeof(cfg->instance), "%s", name);
     snprintf(cfg->host, sizeof(cfg->host), "%s.local", name);
-    snprintf(cfg->service, sizeof(cfg->service), "%s", MDNS_SERVICE_TYPE);
     cfg->port = (uint16_t)app_cfg->port;
 
     // DNS-SD TXT key=value pairs. Each must be <=255 bytes.
@@ -241,7 +240,7 @@ static void emit_ptr(Writer *w, const MdnsConfig *cfg) {
     char instance_fqdn[128];
     // "<instance>._sys-autopilot._tcp.local"
     fqdn(instance_fqdn, sizeof(instance_fqdn), cfg);
-    size_t at = w_rr_head(w, cfg->service, DNS_TYPE_PTR, DNS_CLASS_IN, TTL_PTR);
+    size_t at = w_rr_head(w, MDNS_SERVICE_TYPE, DNS_TYPE_PTR, DNS_CLASS_IN, TTL_PTR);
     w_name(w, instance_fqdn);
     w_rr_patch(w, at);
 }
@@ -361,7 +360,7 @@ static void scan_questions(const MdnsConfig *cfg,
         bool matched = false;
         if (name_equals(pkt, pkt_len, name_off, cfg->host)) {
             if (any || qtype == DNS_TYPE_A) { w->want_a = true; matched = true; }
-        } else if (name_equals(pkt, pkt_len, name_off, cfg->service)) {
+        } else if (name_equals(pkt, pkt_len, name_off, MDNS_SERVICE_TYPE)) {
             if (any || qtype == DNS_TYPE_PTR) { w->want_ptr = true; matched = true; }
         } else if (name_equals(pkt, pkt_len, name_off, instance_fqdn)) {
             if (any || qtype == DNS_TYPE_SRV) { w->want_srv = true; matched = true; }
@@ -494,14 +493,18 @@ int mdns_open(const MdnsConfig *cfg) {
     if (flags >= 0)
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-    LOGF("mdns: advertising %s (service %s) on port %u\n",
-         cfg->host, cfg->service, (unsigned)cfg->port);
+    LOGF("mdns: advertising %s (service " MDNS_SERVICE_TYPE ") on port %u\n",
+         cfg->host, (unsigned)cfg->port);
     return fd;
 }
 
+// Outgoing datagram, shared by replies and announcements (the server loop is
+// single-threaded and neither re-enters the other).
+static uint8_t g_outbuf[1500];
+
 void mdns_handle_readable(int fd, const MdnsConfig *cfg) {
     static uint8_t inbuf[1500];
-    static uint8_t outbuf[1500];
+    uint8_t *outbuf = g_outbuf;
 
     struct sockaddr_in from = {0};
     socklen_t fromlen = sizeof(from);
@@ -512,7 +515,7 @@ void mdns_handle_readable(int fd, const MdnsConfig *cfg) {
 
     bool unicast = false;
     size_t rlen = mdns_build_response(cfg, inbuf, (size_t)n,
-                                      outbuf, sizeof(outbuf), &unicast);
+                                      outbuf, sizeof(g_outbuf), &unicast);
     if (rlen == 0)
         return;
 
@@ -528,8 +531,8 @@ void mdns_handle_readable(int fd, const MdnsConfig *cfg) {
 }
 
 bool mdns_announce(int fd, const MdnsConfig *cfg) {
-    static uint8_t outbuf[1500];
-    size_t len = mdns_build_announcement(cfg, outbuf, sizeof(outbuf));
+    uint8_t *outbuf = g_outbuf;
+    size_t len = mdns_build_announcement(cfg, outbuf, sizeof(g_outbuf));
     if (len == 0)
         return false;
     struct sockaddr_in grp = mdns_group();

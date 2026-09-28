@@ -299,31 +299,27 @@ static void handle_initialize(HttpRequest *req, const char *id, const JsonDoc *d
     send_rpc_value(req->fd, id, "result", val, (size_t)n);
 }
 
-// tools/list: {"tools":[<def>,<def>,...]} assembled from the registered tools.
+// tools/list: {"tools":[<def>,<def>,...]}, streamed straight from the
+// registered definitions (about 19K in all) rather than assembled in memory.
 static void handle_tools_list(HttpRequest *req, const char *id) {
     static const char pre[] = "{\"tools\":[";
     static const char post[] = "]}";
-    size_t total = sizeof(pre) - 1 + sizeof(post) - 1;
+    char head[RPC_HEAD_MAX];
+    size_t hn = rpc_head(head, id, "result");
+    size_t total = hn + sizeof(pre) - 1 + sizeof(post) - 1 + 1;
     for (int i = 0; i < g_tool_count; i++)
-        total += strlen(g_tools[i].def->schema) + 1; // + separating comma
+        total += strlen(g_tools[i].def->schema) + (i ? 1 : 0); // + separating comma
 
-    char *out = request_alloc(req, total + 1);
-    if (!out) {
-        send_rpc_error(req->fd, id, -32603, "out of request memory");
-        return;
-    }
-    size_t pos = 0;
-    memcpy(out + pos, pre, sizeof(pre) - 1);
-    pos += sizeof(pre) - 1;
+    http_send_header(req->fd, 200, "application/json", total);
+    http_write_all(req->fd, head, hn);
+    http_write_all(req->fd, pre, sizeof(pre) - 1);
     for (int i = 0; i < g_tool_count; i++) {
-        if (i) out[pos++] = ',';
-        size_t n = strlen(g_tools[i].def->schema);
-        memcpy(out + pos, g_tools[i].def->schema, n);
-        pos += n;
+        if (i)
+            http_write_all(req->fd, ",", 1);
+        http_write_all(req->fd, g_tools[i].def->schema, strlen(g_tools[i].def->schema));
     }
-    memcpy(out + pos, post, sizeof(post) - 1);
-    pos += sizeof(post) - 1;
-    send_rpc_value(req->fd, id, "result", out, pos);
+    http_write_all(req->fd, post, sizeof(post) - 1);
+    http_write_all(req->fd, "}", 1);
 }
 
 // True if def is the tool called `name` (see McpToolDef for the layout).

@@ -22,7 +22,6 @@
 typedef struct {
     char instance[64];   // DNS-SD instance label, e.g. "nintendo-switch"
     char host[80];       // "<hostname>.local"
-    char service[64];    // MDNS_SERVICE_TYPE
     uint16_t port;       // HTTP service port (host byte order)
     uint32_t ipv4;       // our IPv4, host order (octet 1 in the high byte)
     char txt[256];       // DNS-SD TXT rdata: length-prefixed key=value blocks

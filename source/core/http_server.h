@@ -12,7 +12,7 @@
 typedef void (*HttpHandler)(HttpRequest *req);
 
 // Capacity of the route table; registration fails (and logs) past it.
-#define HTTP_MAX_ROUTES 80
+#define HTTP_MAX_ROUTES 64 // a full build registers 52
 
 // Routes `method` + exact `path` to `handler`. Strings must outlive the
 // server (string literals). Returns false when the table is full.

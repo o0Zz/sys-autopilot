@@ -218,8 +218,11 @@ typedef struct {
     // offset into the file's ABSOLUTE offset in the stream, so the same install
     // loop serves PFS0 and nested-HFS0 layouts.
     FsEntry entries[MAX_FILES];
-    u8 cnmt_nca[0x4000];
-    u8 cnmt_buf[0x4000];
+    union {
+        u8 cnmt_nca[0x4000];  // the streamed meta NCA, while entries install
+        u8 cnmt_buf[0x4000];  // its CNMT, read back once they are all in
+    };
+    NcmContentInfo infos[MAX_FILES];
     u8 tik_buf[0x600];
     u8 cert_buf[0x800];
     u8 ext_hdr[0x80];
@@ -522,7 +525,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     // Parse the CNMT (from the now-registered meta NCA via its NCM path), then
     // register the content-meta DB entry + ticket + record.
     PackagedContentMetaHeader pkg = {0};
-    NcmContentInfo infos[MAX_FILES];
+    NcmContentInfo *infos = g_w->infos;
     int infos_n = 0;
     u8 *ext_hdr = g_w->ext_hdr;
     u16 ext_hdr_size = 0;

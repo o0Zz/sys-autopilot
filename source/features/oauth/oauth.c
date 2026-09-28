@@ -276,8 +276,10 @@ bool oauth_mint_token(char *out, size_t outsz, const char *note) {
 // --- pending authorization codes ---------------------------------------------
 
 typedef struct {
-    char code[40];          // 16 random bytes as hex
-    char challenge[96];     // PKCE S256 code_challenge (43 base64url chars)
+    char code[33];          // 16 random bytes as hex
+    // PKCE S256 code_challenge: 43 base64url chars. A longer one is stored
+    // truncated, which is harmless: it can never match the 43-char digest.
+    char challenge[48];
     char redirect_uri[512];
     uint64_t expires_at;    // now_secs() deadline; 0 = slot free
 } AuthCode;
@@ -299,7 +301,8 @@ static AuthCode *code_create(const char *challenge, const char *redirect_uri) {
     uint8_t rnd[16];
     fill_random(rnd, sizeof(rnd));
     to_hex(rnd, sizeof(rnd), slot->code);
-    snprintf(slot->challenge, sizeof(slot->challenge), "%s", challenge);
+    snprintf(slot->challenge, sizeof(slot->challenge), "%.*s",
+             (int)sizeof(slot->challenge) - 1, challenge);
     snprintf(slot->redirect_uri, sizeof(slot->redirect_uri), "%s", redirect_uri);
     slot->expires_at = now + CODE_LIFETIME_SECS;
     return slot;
@@ -500,21 +503,17 @@ static bool redirect_uri_ok(const char *uri) {
 
 static void handle_authorize_get(HttpRequest *req) {
     if (!creds_configured()) {
-        enum { PAGE_SIZE = 4096 };
-        char *page = request_alloc(req, PAGE_SIZE);
-        if (!page) {
-            http_send_error(req->fd, 500, "out of request memory");
-            return;
-        }
-        Sb sb = { .buf = page, .cap = PAGE_SIZE, .ok = true };
-        page[0] = '\0';
-        sb_puts(&sb, kPageHead);
-        sb_puts(&sb, "<form><h1>sys-autopilot</h1>"
-                     "<p class=\"err\">No credentials configured. Set username and "
-                     "password in config/sys-autopilot/config.ini on the SD card "
-                     "and reboot, then try again.</p></form>");
-        sb_puts(&sb, kPageFoot);
-        http_send_response(req->fd, 403, "text/html", page, sb.len);
+        // Constant page: written straight out, no buffer to assemble it in.
+        static const char msg[] =
+            "<form><h1>sys-autopilot</h1>"
+            "<p class=\"err\">No credentials configured. Set username and "
+            "password in config/sys-autopilot/config.ini on the SD card "
+            "and reboot, then try again.</p></form>";
+        http_send_header(req->fd, 403, "text/html",
+                         sizeof(kPageHead) - 1 + sizeof(msg) - 1 + sizeof(kPageFoot) - 1);
+        http_write_all(req->fd, kPageHead, sizeof(kPageHead) - 1);
+        http_write_all(req->fd, msg, sizeof(msg) - 1);
+        http_write_all(req->fd, kPageFoot, sizeof(kPageFoot) - 1);
         return;
     }
 

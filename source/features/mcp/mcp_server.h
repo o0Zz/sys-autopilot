@@ -31,7 +31,7 @@ typedef struct {
 typedef void (*McpToolHandler)(McpCall *call);
 
 // Capacity of the tool table; registration fails (and logs) past it.
-#define MCP_MAX_TOOLS 64
+#define MCP_MAX_TOOLS 48 // a full build registers 41
 
 // Registers the POST/GET /mcp routes and the "path=/mcp" mDNS TXT entry.
 void mcp_server_http_register(void);
