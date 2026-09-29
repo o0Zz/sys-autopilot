@@ -52,8 +52,13 @@ DEFINES	+=	$(foreach f,$(FEATURES) $(MCP_FEATURES),-DFEATURE_$(shell echo $(f) |
 # Atmosphere program (title) ID for this sysmodule.
 export TITLE_ID	:=	4200000000004150
 
-# Version is managed by changesets in package.json.
-export APP_VERSION	:=	$(shell sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' $(TOPDIR)/package.json)
+# Version: the nearest git tag (or the commit hash when untagged). The release
+# workflow passes the tag explicitly, e.g. `make dist APP_VERSION=1.6.0`.
+# devkitPro's rules default it to 1.0.0, so only a command-line value wins.
+ifneq ($(origin APP_VERSION),command line)
+APP_VERSION	:=	$(shell git -C $(TOPDIR) describe --tags --always --dirty 2>/dev/null)
+endif
+export APP_VERSION
 ifneq ($(strip $(APP_VERSION)),)
 DEFINES	+=	-DAPP_VERSION=\"$(APP_VERSION)\"
 endif

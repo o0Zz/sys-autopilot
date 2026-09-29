@@ -74,12 +74,4 @@ cc $CFLAGS -Ifake -DFEATURE_MCP \
     $ROUTER
 "$OUT/test_mcp"
 
-# Release tooling: our resilient changelog generator (replaces the flaky
-# @changesets/changelog-github). Runs only when Node is available; fetch is
-# stubbed so no network/token is needed.
-if command -v node >/dev/null 2>&1; then
-    echo "== changelog-github =="
-    node --test changelog-github.test.mjs
-fi
-
 echo "ALL HOST TESTS PASSED"

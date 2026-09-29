@@ -77,7 +77,7 @@ make clean && make FEATURES="explorer power"
 ## Installing
 
 Download the latest `sys-autopilot-<version>.zip` from
-[Releases](https://github.com/TooTallNate/sys-autopilot/releases) and extract
+[Releases](https://github.com/o0Zz/sys-autopilot/releases) and extract
 it to the root of your SD card. Or build from source and copy the contents of
 `dist/` to the root of your SD card:
 
@@ -422,34 +422,9 @@ install rolls back the content it wrote. (XCI gamecard NCAs are not guaranteed
 to hash to their filename id, so that per-NCA check is skipped for XCI; the
 meta NCA is still verified.) Both trimmed and full XCI layouts are supported.
 
-> Uncompressed containers only — decompress **NSZ** on the host first (see
-> Compressed NSZ below). Installing commercial titles still requires a valid
-> ticket and, for some games, a linked account — that is the title's own DRM,
-> independent of the installer.
-
-#### Compressed NSZ
-
-The console only understands plain NSP (uncompressed NCAs); decompressing an
-**NSZ** on-device would force a multi-MB zstd window to live permanently in the
-sysmodule, so the decompression is done on the host instead. The included
-`install-nsz` script reads an `.nsz`, decompresses + re-encrypts each `.ncz`
-into a plain NCA on the fly, and streams a reconstructed NSP straight to
-`/install` (nothing is buffered to disk; the console still verifies every NCA
-hash as it lands):
-
-```sh
-# one-time: install the host dependencies
-pnpm install
-
-node scripts/install-nsz.mjs "Game [0100...000][v0].nsz" http://<ip>:4150 --netrc
-# -> HTTP 200: {"ok":true,"titleId":"0100...000","version":0,"message":"installed ..."}
-
-# options: --storage nand   --user <u> --pass <p>   --dry-run (verify locally, no upload)
-```
-
-`--netrc` reads HTTP Basic credentials from `~/.netrc` for the console's host.
-Use `--dry-run` to decompress and validate the reconstructed NSP size locally
-without touching a console.
+> Uncompressed containers only (no **NSZ** / **XCZ**). Installing commercial
+> titles still requires a valid ticket and, for some games, a linked account —
+> that is the title's own DRM, independent of the installer.
 
 ### List installed titles
 
@@ -616,17 +591,16 @@ CI (GitHub Actions) runs the host test suite on every push/PR and builds the
 sysmodule inside the `devkitpro/devkita64` container, uploading the SD card
 layout as an artifact.
 
-Releases are managed with [changesets](https://github.com/changesets/changesets):
+To cut a release, push a tag:
 
 ```sh
-pnpm install
-pnpm changeset        # record a change + semver intent
+git tag 1.6.0 && git push origin 1.6.0
 ```
 
-When changesets land on `main`, the release workflow opens a "Version
-Packages" PR; merging it bumps `package.json` (which the Makefile injects
-into the build as `APP_VERSION`), updates `CHANGELOG.md`, and publishes a
-GitHub Release with the SD-card zip attached.
+The release workflow builds with that tag as `APP_VERSION` and publishes a
+GitHub Release with the SD-card zip attached and notes generated from the
+commits since the previous tag. Local builds report `git describe` (the
+nearest tag, or the commit hash) as their version.
 
 ## Notes & limitations
 

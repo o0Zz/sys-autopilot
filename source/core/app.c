@@ -2,7 +2,7 @@
 
 #include <switch.h>
 
-// Injected by the Makefile from package.json (the changesets-managed version).
+// Injected by the Makefile (git tag or commit hash).
 #ifndef APP_VERSION
 #define APP_VERSION "0.0.0-dev"
 #endif

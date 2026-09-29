@@ -7,7 +7,7 @@
 // Streamed title installer. Reads a PFS0/NSP or HFS0/XCI from a byte stream
 // (the HTTP request body) and installs it into NCM content storage + registers
 // it so the title appears on the HOME menu. Uncompressed containers only
-// (no NSZ/NCZ; decompress those on the host first).
+// (no NSZ/NCZ).
 
 // Storage target.
 typedef enum {
