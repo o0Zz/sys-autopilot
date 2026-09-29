@@ -22,6 +22,7 @@ g_request            the request being parsed, headers included (core/http_serve
 g_codes              pending OAuth codes, must outlive the request (features/oauth)
 fsdev_fsdevices      libnx
 handles              libnx
+__argdata__          libnx linker marker at the end of .bss (nm reports a bogus size)
 '
 
 "$NM" -S --size-sort "$ELF" | awk -v limit="$LIMIT" -v allowed="$ALLOWED" '

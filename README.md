@@ -616,3 +616,8 @@ nearest tag, or the commit hash) as their version.
 - Touch input only reaches applications in handheld mode; docked, the panel
   is off, so `/input/touch` succeeds while nothing happens on screen.
 - No TLS; treat the API as LAN-trusted.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The vendored `lib/jsmn` keeps its own MIT
+license.
