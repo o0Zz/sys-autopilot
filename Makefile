@@ -144,7 +144,7 @@ export OFILES	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-			-I$(CURDIR)/$(BUILD)
+			-I$(CURDIR)/$(BUILD) -I$(CURDIR)/$(BUILD)/gen
 
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
@@ -155,8 +155,11 @@ export APP_JSON := $(TOPDIR)/$(TARGET).json
 #---------------------------------------------------------------------------------
 all: $(BUILD)
 
+# Resource headers (*_tools.h, explorer_html.h) are generated from the .json
+# and .html files under source/ into $(BUILD)/gen; see generate_resource.py.
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
+	@python3 $(CURDIR)/scripts/generate_resource.py --out $(CURDIR)/$(BUILD)/gen
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 #---------------------------------------------------------------------------------

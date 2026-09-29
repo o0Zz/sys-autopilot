@@ -7,14 +7,16 @@ port 4150. See README.md for the user-facing API.
 ## Commands
 
 ```sh
-make                              # build sys-autopilot.nsp (needs devkitPro)
+make                              # build sys-autopilot.nsp (needs devkitPro, python3)
 make dist                         # SD card tree in dist/
 make clean && make MCP=0          # build without MCP/OAuth
 make clean && make FEATURES="…"   # choose optional features
-./tests/run.sh                    # host test suite (plain cc, no devkitPro)
-python scripts/generate_resource.py          # regenerate *_tools.h / explorer_html.h
-python scripts/generate_resource.py --check  # fail if a generated header is stale
+./tests/run.sh                    # host test suite (plain cc + python3, no devkitPro)
 ```
+
+Both `make` and `tests/run.sh` run `scripts/generate_resource.py`, which
+turns every `*_tools.json` and `explorer.html` into a header under
+`build/gen/` (or `tests/build/gen/`). The headers are not committed.
 
 No devkitPro on Windows? Build and test in the CI image:
 
@@ -39,7 +41,8 @@ The image has no host `cc`; install `gcc libc6-dev` with apt before running
   - `<name>.c`: the service, no HTTP.
   - `<name>_http.c`: registers REST routes with `http_server_register_route`.
   - `<name>_mcp.c`: registers MCP tools.
-  - `<name>_tools.json`: tool schemas. `<name>_tools.h` is generated from it.
+  - `<name>_tools.json`: tool schemas. The build generates
+    `build/gen/features/<name>/<name>_tools.h` from it.
 - `source/features/feature_list.c`: initializes and registers every feature
   that is compiled in.
 - `sys-autopilot.json`: NPDM. Every service the code opens must be listed here.
@@ -54,9 +57,8 @@ The image has no host `cc`; install `gcc libc6-dev` with apt before running
 3. Add its init and register calls to `feature_list.c`, behind
    `#ifdef FEATURE_<NAME>` (and `FEATURE_MCP` for the tools).
 4. Add the services it opens to `sys-autopilot.json`.
-5. Write tool schemas in `<name>_tools.json` and run
-   `scripts/generate_resource.py`. Commit the generated header: the device
-   build does not run Python.
+5. Write tool schemas in `<name>_tools.json`. The build generates
+   `<name>_tools.h`; include it as `features/<name>/<name>_tools.h`.
 6. Add a test to `tests/run.sh`.
 
 Route and tool tables are fixed size: `HTTP_MAX_ROUTES` (64) in

@@ -7,4 +7,7 @@ dist/
 *.nro
 *.nacp
 *.map
+# Generated into build/gen by scripts/generate_resource.py
+source/**/*_tools.h
+source/**/*_html.h
 .DS_Store

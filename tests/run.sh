@@ -13,8 +13,9 @@ OUT=build
 FAKE_SD=/tmp/sys-autopilot-fakesd
 
 mkdir -p "$OUT"
+python3 ../scripts/generate_resource.py --out "$OUT/gen"
 
-CFLAGS="-g -Wall -Wextra -Wno-unused-parameter -I$SRC -I$JSMN"
+CFLAGS="-g -Wall -Wextra -Wno-unused-parameter -I$SRC -I$JSMN -I$OUT/gen"
 
 # The HTTP router and request memory, used by every test that drives routes.
 ROUTER="$CORE/http_router.c $CORE/request.c $CORE/http.c $CORE/config.c \

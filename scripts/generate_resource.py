@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """Bakes resource files under source/ into C headers.
 
-Each resource lives next to the feature that uses it, and its generated header
-sits beside it:
+Each resource lives next to the feature that uses it. Its header is written to
+the same relative path under the output directory, which the build puts on the
+include path:
 
-  features/explorer/explorer.html     -> explorer_html.h
+  features/explorer/explorer.html     -> OUT/features/explorer/explorer_html.h
       The page as one C string, kExplorerHtml.
 
-  features/process/process_tools.json -> process_tools.h
+  features/process/process_tools.json -> OUT/features/process/process_tools.h
       One McpToolDef per MCP tool (kToolProcessStart, ...): its minified JSON
       definition, name first, ready for mcp_server_register_tool(). Each
       file's "$defs" hold property definitions shared by its tools; every
       "$ref": "#/$defs/<name>" is inlined, so clients never see a reference.
 
 Usage:
-  scripts/generate_resource.py            regenerate every resource
-  scripts/generate_resource.py FILE...    regenerate only these
-  scripts/generate_resource.py --check    fail if any header is stale (CI)
+  scripts/generate_resource.py --out DIR            generate every resource
+  scripts/generate_resource.py --out DIR FILE...    generate only these
 
-The generated headers are committed: the device build must not need Python.
+`make` and tests/run.sh run this; the headers are build outputs, not committed.
+A header is rewritten only when its content changes, so unchanged resources
+do not trigger a rebuild.
 """
 import json
 import os
@@ -64,8 +66,7 @@ def generate_text(path):
     for line in text.rstrip("\n").split("\n"):
         lines.append('    "%s\\n"' % c_escape(line))
     lines[-1] += ";"
-    out = os.path.join(os.path.dirname(path), "%s_%s.h" % (stem, ext[1:]))
-    return out, "\n".join(lines) + "\n"
+    return "%s_%s.h" % (stem, ext[1:]), "\n".join(lines) + "\n"
 
 
 # --- MCP tool definitions -----------------------------------------------------
@@ -119,8 +120,7 @@ def generate_tools(path):
         lines.extend(c_string_lines(payload))
         lines.append("};")
         lines.append("")
-    out = os.path.join(os.path.dirname(path), os.path.splitext(name)[0] + ".h")
-    return out, "\n".join(lines).rstrip("\n") + "\n"
+    return os.path.splitext(name)[0] + ".h", "\n".join(lines).rstrip("\n") + "\n"
 
 
 # --- driver -------------------------------------------------------------------
@@ -144,33 +144,24 @@ def all_resources():
 
 
 def main(argv):
-    check = "--check" in argv
-    paths = [os.path.abspath(a) for a in argv if a != "--check"] or all_resources()
-    stale = []
+    if len(argv) < 2 or argv[0] != "--out":
+        raise SystemExit("usage: %s --out DIR [FILE...]" % SCRIPT)
+    out_dir = argv[1]
+    paths = [os.path.abspath(a) for a in argv[2:]] or all_resources()
     for p in paths:
         gen = generator_for(p)
         if not gen:
             raise SystemExit("%s: not a resource (expected *.html or *_tools.json)" % p)
-        out, content = gen(p)
-        current = None
+        header, content = gen(p)
+        out = os.path.join(out_dir, os.path.relpath(os.path.dirname(p), SOURCE), header)
         if os.path.exists(out):
-            # Compare modulo line endings: a Windows checkout may have CRLF.
             with open(out, encoding="utf-8", newline="") as f:
-                current = f.read().replace("\r\n", "\n")
-        rel = os.path.relpath(out, ROOT).replace(os.sep, "/")
-        if current == content:
-            continue
-        if check:
-            stale.append(rel)
-            continue
+                if f.read() == content:
+                    continue
+        os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
-        print("wrote", rel)
-    if stale:
-        print("stale generated headers (run %s):" % SCRIPT)
-        for s in stale:
-            print("  " + s)
-        return 1
+        print("generated", os.path.relpath(p, SOURCE).replace(os.sep, "/"))
     return 0
 
 
