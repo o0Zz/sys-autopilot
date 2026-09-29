@@ -83,7 +83,7 @@ static bool open_pminfo(void) {
         smExit();
     }
     if (R_FAILED(rc)) {
-        LOGF("process: pminfoInitialize failed rc=0x%x\n", rc);
+        LOGE("process", "pminfoInitialize failed rc=0x%x", rc);
         return false;
     }
     return true;
@@ -100,7 +100,7 @@ int process_list(ProcessEntry *out, int max, uint32_t *out_rc) {
     s32 count = 0;
     Result rc = svcGetProcessList(&count, pids, (u32)max);
     if (R_FAILED(rc)) {
-        LOGF("process: svcGetProcessList failed rc=0x%x\n", rc);
+        LOGE("process", "svcGetProcessList failed rc=0x%x", rc);
         *out_rc = rc;
         return -1;
     }
