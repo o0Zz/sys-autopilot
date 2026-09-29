@@ -144,12 +144,15 @@ bool power_perform(PowerAction action) {
     return R_SUCCEEDED(rc);
 }
 
+// idle:sys is opened directly: released libnx has no wrapper for it (libnx
+// master's idlesys.c is this same session and command 5).
+static Service g_idle_srv;
 static bool g_idle_ok;
 
 bool power_keepawake_init(void) {
-    Result rc = idlesysInitialize();
+    Result rc = smGetService(&g_idle_srv, "idle:sys");
     if (R_FAILED(rc)) {
-        LOGF("power: idlesysInitialize failed rc=0x%x\n", rc);
+        LOGF("power: idle:sys unavailable rc=0x%x\n", rc);
         return false;
     }
     g_idle_ok = true;
@@ -162,7 +165,7 @@ bool power_keepawake_available(void) {
 
 void power_keepawake_exit(void) {
     if (g_idle_ok) {
-        idlesysExit();
+        serviceClose(&g_idle_srv);
         g_idle_ok = false;
     }
 }
@@ -173,9 +176,9 @@ void power_keepawake_tick(void) {
     // Logged on the first ping (so the log shows keep-awake actually running)
     // and on failure only: this runs for the whole lifetime of the console.
     static bool logged_first;
-    Result rc = idlesysReportUserIsActive();
+    Result rc = serviceDispatch(&g_idle_srv, 5); // ReportUserIsActive
     if (R_FAILED(rc)) {
-        LOGF("power: idlesysReportUserIsActive failed rc=0x%x\n", rc);
+        LOGF("power: ReportUserIsActive failed rc=0x%x\n", rc);
     } else if (!logged_first) {
         logged_first = true;
         LOGF("power: keep-awake active (idle counter reset)\n");
