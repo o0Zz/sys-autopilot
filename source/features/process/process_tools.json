@@ -7,6 +7,14 @@
   },
   "tools": [
     {
+      "name": "process_list",
+      "description": "List every running process on the console, including ones this server did not start: kernel initial processes, boot2 sysmodules and the running game. Each line has the process id and the title id; kernel initial processes that pm does not track have no title id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "process_status",
       "description": "Check whether the program with the given title id is currently running, and return its process id if so. Use this to confirm a sysmodule actually came up after starting it, or actually went away after stopping it.",
       "inputSchema": {

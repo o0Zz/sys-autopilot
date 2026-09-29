@@ -3,6 +3,7 @@
 #include "core/request.h"
 #include "features/process/process.h"
 
+#include <stdio.h>
 #include <string.h>
 
 // Title ids are 16 hex digits, matching the form /titles reports them in. They
@@ -62,6 +63,42 @@ static void get_status(HttpRequest *req) {
                        (unsigned long long)tid);
 }
 
+// GET /process/list
+static void get_list(HttpRequest *req) {
+    if (!process_available()) {
+        http_send_error(req->fd, 500, "process control unavailable");
+        return;
+    }
+
+    // Each JSON entry is under 64 bytes.
+    enum { ENTRY_SIZE = 64, BODY_SIZE = PROCESS_LIST_MAX * ENTRY_SIZE + 32 };
+    ProcessEntry *procs = request_alloc(req, sizeof(*procs) * PROCESS_LIST_MAX);
+    char *body = request_alloc(req, BODY_SIZE);
+    if (!procs || !body) {
+        http_send_error(req->fd, 500, "out of request memory");
+        return;
+    }
+
+    uint32_t rc = 0;
+    int count = process_list(procs, PROCESS_LIST_MAX, &rc);
+    if (count < 0) {
+        send_process_error(req, "process list failed", rc);
+        return;
+    }
+
+    size_t pos = (size_t)snprintf(body, BODY_SIZE, "{\"processes\":[");
+    for (int i = 0; i < count && pos < BODY_SIZE - ENTRY_SIZE; i++) {
+        pos += (size_t)snprintf(body + pos, BODY_SIZE - pos, "%s{\"pid\":\"%llu\"",
+                                i ? "," : "", (unsigned long long)procs[i].pid);
+        if (procs[i].has_program_id)
+            pos += (size_t)snprintf(body + pos, BODY_SIZE - pos, ",\"titleId\":\"%016llx\"",
+                                    (unsigned long long)procs[i].program_id);
+        body[pos++] = '}';
+    }
+    pos += (size_t)snprintf(body + pos, BODY_SIZE - pos, "]}");
+    http_send_response(req->fd, 200, "application/json", body, pos);
+}
+
 // POST /process/start {"titleId":"T"}
 static void post_start(HttpRequest *req) {
     uint64_t tid;
@@ -113,6 +150,7 @@ static void post_restart(HttpRequest *req) {
 
 void process_http_register(void) {
     http_server_register_route("GET",  "/process",         get_status);
+    http_server_register_route("GET",  "/process/list",    get_list);
     http_server_register_route("POST", "/process/start",   post_start);
     http_server_register_route("POST", "/process/stop",    post_stop);
     http_server_register_route("POST", "/process/restart", post_restart);

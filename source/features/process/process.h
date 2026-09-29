@@ -32,6 +32,18 @@ bool process_available(void);
 // Liveness: fills *out. Call only when process_available().
 void process_status(uint64_t program_id, ProcessStatus *out);
 
+typedef struct {
+    uint64_t pid;
+    uint64_t program_id;  // only meaningful when has_program_id
+    bool     has_program_id; // false for processes pm does not track (kernel initial processes)
+} ProcessEntry;
+
+#define PROCESS_LIST_MAX 96
+
+// Every process on the system, not only the ones launched here. Fills
+// out[0..max) and returns the count, or -1 with the Horizon result in *out_rc.
+int process_list(ProcessEntry *out, int max, uint32_t *out_rc);
+
 // Launches the program. *out_pid receives the new process id. On failure the
 // Horizon result is stored in *out_rc (0 when the failure was not a Result).
 bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc);

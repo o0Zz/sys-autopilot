@@ -73,22 +73,75 @@ bool process_available(void) {
     return g_initialized;
 }
 
+// __appInit closes the sm session, so no service can be opened at request time
+// without reopening it first. smInitialize is refcounted and reconnects to the
+// named port, so this is safe to do per call. Pair with pminfoExit().
+static bool open_pminfo(void) {
+    Result rc = smInitialize();
+    if (R_SUCCEEDED(rc)) {
+        rc = pminfoInitialize();
+        smExit();
+    }
+    if (R_FAILED(rc)) {
+        LOGF("process: pminfoInitialize failed rc=0x%x\n", rc);
+        return false;
+    }
+    return true;
+}
+
+int process_list(ProcessEntry *out, int max, uint32_t *out_rc) {
+    *out_rc = 0;
+    if (max > PROCESS_LIST_MAX)
+        max = PROCESS_LIST_MAX;
+
+    // Every pid on the system, including the kernel's initial processes, not
+    // only the ones pm launched for us.
+    u64 pids[PROCESS_LIST_MAX];
+    s32 count = 0;
+    Result rc = svcGetProcessList(&count, pids, (u32)max);
+    if (R_FAILED(rc)) {
+        LOGF("process: svcGetProcessList failed rc=0x%x\n", rc);
+        *out_rc = rc;
+        return -1;
+    }
+
+    // Without pm:info the pids are still worth reporting on their own.
+    bool have_info = open_pminfo();
+    for (s32 i = 0; i < count; i++) {
+        out[i].pid = pids[i];
+        out[i].program_id = 0;
+        out[i].has_program_id = have_info &&
+            R_SUCCEEDED(pminfoGetProgramId(&out[i].program_id, pids[i]));
+    }
+    if (have_info)
+        pminfoExit();
+    return count;
+}
+
+// Finds a running program we did not launch ourselves by walking the full
+// process list. Returns 0 when it is not running.
+static u64 find_pid(u64 program_id) {
+    u64 pids[PROCESS_LIST_MAX];
+    s32 count = 0;
+    if (R_FAILED(svcGetProcessList(&count, pids, PROCESS_LIST_MAX)) || !open_pminfo())
+        return 0;
+    u64 found = 0;
+    for (s32 i = 0; i < count && !found; i++) {
+        u64 tid = 0;
+        if (R_SUCCEEDED(pminfoGetProgramId(&tid, pids[i])) && tid == program_id)
+            found = pids[i];
+    }
+    pminfoExit();
+    return found;
+}
+
 void process_status(uint64_t program_id, ProcessStatus *out) {
     // pm:dmnt accepts a single session and Atmosphere's own dmnt already holds
     // it, so it is not available here at all. Resolve the pid we were handed at
     // launch through pm:info instead: if it still maps to this program, the
     // process is alive.
     if (g_last_pid != 0 && g_last_program_id == program_id) {
-        // __appInit closes the sm session, so no service can be opened at
-        // request time without reopening it first. smInitialize is refcounted
-        // and reconnects to the named port, so this is safe to do per call.
-        Result irc = smInitialize();
-        if (R_SUCCEEDED(irc)) {
-            irc = pminfoInitialize();
-            smExit();
-        }
-        if (R_FAILED(irc)) {
-            LOGE("process", "pminfoInitialize failed rc=0x%x", irc);
+        if (!open_pminfo()) {
             out->running = false;
             out->pid = 0;
             return;
@@ -107,16 +160,13 @@ void process_status(uint64_t program_id, ProcessStatus *out) {
     Result rc = R_FAILED(pmdmntInitialize()) ? MAKERESULT(Module_Libnx, LibnxError_NotFound)
                                              : pmdmntGetProcessId(&pid, program_id);
     pmdmntExit();
-    if (R_SUCCEEDED(rc)) {
-        out->running = true;
-        out->pid = pid;
-    } else {
-        // Any failure here means "no process with that program id". pm does not
-        // distinguish "not running" from other lookup errors in a way worth
-        // surfacing, and the query itself succeeded.
-        out->running = false;
-        out->pid = 0;
-    }
+    // pm:dmnt is normally taken (see above), and pm does not distinguish "not
+    // running" from other lookup errors in a way worth surfacing, so any
+    // failure falls back to scanning every process.
+    if (R_FAILED(rc))
+        pid = find_pid(program_id);
+    out->running = pid != 0;
+    out->pid = pid;
 }
 
 // boot2 launches SD sysmodules while the system pool still has room. Launching
@@ -265,6 +315,19 @@ bool process_stop(uint64_t program_id, uint32_t *out_rc) {
 bool process_restart(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
     process_stop(program_id, out_rc);
     return process_start(program_id, out_pid, out_rc);
+}
+
+// One kernel initial process that pm does not know (no program id), then the
+// fake program when it runs.
+int process_list(ProcessEntry *out, int max, uint32_t *out_rc) {
+    *out_rc = 0;
+    int n = 0;
+    if (n < max)
+        out[n++] = (ProcessEntry){ .pid = 1 };
+    if (g_fake_running && n < max)
+        out[n++] = (ProcessEntry){ .pid = g_fake_pid, .program_id = g_fake_program_id,
+                                   .has_program_id = true };
+    return n;
 }
 
 #endif

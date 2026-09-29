@@ -110,7 +110,7 @@ OAuth tokens never expire. They are stored one per line in
 | Buttons | `tap_buttons`, `tap_sequence`, `hold_buttons`, `release_buttons`, `set_stick`, `clear_input` |
 | Touch | `tap_screen`, `swipe_screen` (1280x720, same space as the screenshot; handheld only) |
 | Files | `list_directory`, `read_file` (negative `offset` = tail), `upload_file`, `move_file`, `delete_file`, `hash_file` |
-| Processes | `process_status`, `process_start`, `process_stop`, `process_restart` |
+| Processes | `process_list`, `process_status`, `process_start`, `process_stop`, `process_restart` |
 | Settings | `get_*` / `set_*` for `theme`, `nickname`, `brightness`, `volume`, `auto_time`, `datetime`; `airplane_mode` |
 | System | `status`, `list_installed_titles`, `get_dns`, `set_dns`, `sleep`, `restart`, `power_off` |
 | Auth | `create_token`, `revoke_token` |
@@ -157,6 +157,7 @@ POST   /files/move?path=/a.nro&to=/b.nro                rename / move, never ove
 GET    /files/hash?path=/switch/app.nro                 SHA-256
 
 GET  /process?titleId=<id>                        running + pid
+GET  /process/list                               every running process: pid + titleId
 POST /process/start | /process/stop | /process/restart  {"titleId":"<id>"}
 
 POST|PUT /install[?storage=sd|nand]               stream an NSP or XCI (not NSZ)

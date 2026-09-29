@@ -99,7 +99,8 @@
                 "svcReplyAndReceiveLight": "0x42",
                 "svcReplyAndReceive": "0x43",
                 "svcReplyAndReceiveWithUserBuffer": "0x44",
-                "svcCreateEvent": "0x45"
+                "svcCreateEvent": "0x45",
+                "svcGetProcessList": "0x65"
             }
         },
         {
