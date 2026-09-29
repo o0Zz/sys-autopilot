@@ -1,85 +1,36 @@
 # sys-autopilot
 
-A Nintendo Switch (Atmosphère) sysmodule that runs a persistent HTTP server on
-the console. It exposes a REST API, **a native MCP (Model Context Protocol)
-endpoint**, and a browser file explorer for taking screenshots, injecting
-controller input, and reading/writing files on the SD card — everything an AI agent needs to drive
-the Switch while testing homebrew applications.
+A Nintendo Switch (Atmosphère) sysmodule that runs an HTTP server on the
+console, with a **native MCP endpoint** so an AI agent (Claude Code, Cursor, …)
+can drive the Switch: take screenshots, press buttons, touch the screen, read
+and write the SD card, and start or stop programs while you test homebrew.
 
 Typical agent loop:
 
-1. `curl -T myapp.nro` — deploy a fresh build
-2. `screenshot` + `tap_buttons` MCP tools — navigate to hbmenu and launch it
-3. `screenshot` / `read_file` — observe the app and its log files, iterate
+1. `curl -T myapp.nro` (or `upload_file`) to deploy a build
+2. `screenshot` + `tap_buttons` to launch it from hbmenu
+3. `screenshot` / `read_file` to watch the app and its logs, then iterate
 
 ## What this fork adds
 
-This is a fork of [TooTallNate/sys-autopilot](https://github.com/TooTallNate/sys-autopilot).
-On top of upstream it adds:
+A fork of [TooTallNate/sys-autopilot](https://github.com/TooTallNate/sys-autopilot) with:
 
-- **Process control** — start, stop, restart and query any program by title id
-  (`/process`, `process_*` MCP tools). Iterate on a sysmodule without
-  rebooting: stop it, upload the new `exefs.nsp`, start it again. See
-  [Process control](#process-control).
-- **Built-in file explorer** — a browser file manager at `/explorer` (and `/`):
-  browse, edit, upload, download, rename, delete, live log tail, reboot
-  button, Ctrl+S to save. See [File explorer](#file-explorer).
-- **File move / rename** — `/files/move` endpoint and `move_file` MCP tool.
-- **Touch gestures** — `/input/touch` and `/input/swipe`, injected on the
-  panel independently of the virtual controller. See [Touch screen](#touch-screen).
-- **Keep awake** — `[power] keep_awake` holds off auto-sleep so the WLAN stays
-  up and the server keeps answering.
-- **Smaller memory footprint** — the inner heap drops from 4 MB to 1 MB. Large
-  transient buffers (install, hashing, JPEG) come from one request-scoped
-  arena instead of per-feature statics, and the install chunk drops from
-  1 MiB to 128 KiB. The code shrinks by ~65 KB.
-- **More reliable networking** — smaller per-socket buffers with a larger
-  pool: ten sockets instead of two, for roughly the same memory. Browsers and
-  concurrent REST clients no longer get random connection resets, and idle
-  connections close without leaving the server in `TIME_WAIT`.
-- **Modular build** — each feature lives in `source/features/<name>/` and can
-  be left out: `make FEATURES="explorer power"` builds only those optional
-  features, and `make MCP=0` drops MCP and OAuth. See [Building](#building).
+- **Process control**: start, stop, restart and query any program by title id.
+  Reload a sysmodule without rebooting.
+- **File explorer** in the browser at `http://<console>:4150/`.
+- **File move / rename**, **touch gestures** (tap, swipe), **keep awake**.
+- **Smaller footprint**: 1 MB heap instead of 4 MB, one shared per-request
+  buffer instead of per-feature statics, about 65 KB less code.
+- **Reliable networking**: ten sockets instead of two for the same memory, so
+  browsers and concurrent clients no longer get random resets.
+- **Modular build**: leave out features with `FEATURES=` or MCP with `MCP=0`.
 
-## Requirements
+## Install
 
-- Switch running [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere) CFW
-- Firmware **10.0.0+** (uses the native `caps:sc` JPEG screenshot command)
-- Building: [devkitPro](https://devkitpro.org/) with `switch-dev` (devkitA64 + libnx)
+Requires Atmosphère and firmware 10.0.0+.
 
-## Building
-
-```sh
-make            # builds sys-autopilot.nsp (the sysmodule exefs)
-make dist       # assembles an SD-card-ready tree under dist/
-./tests/run.sh  # host-side test suite (no devkitPro required)
-```
-
-To leave more memory to the rest of the system when you only use the REST
-API, build without MCP:
-
-```sh
-make clean && make MCP=0
-```
-
-This drops `/mcp` and the OAuth browser login that exists for MCP clients
-(about 100 KB of code and 120 KB of RAM). Bearer auth then accepts only the
-`token` from `config.ini`; Basic auth is unchanged.
-
-The optional features are chosen with `FEATURES` (default:
-`explorer install network power process titles`). `status`, `screen`,
-`input`, `files` and `settings` are always built:
-
-```sh
-make clean && make FEATURES="explorer power"
-```
-
-## Installing
-
-Download the latest `sys-autopilot-<version>.zip` from
-[Releases](https://github.com/o0Zz/sys-autopilot/releases) and extract
-it to the root of your SD card. Or build from source and copy the contents of
-`dist/` to the root of your SD card:
+Extract the zip from [Releases](https://github.com/o0Zz/sys-autopilot/releases)
+to the root of the SD card and reboot. The server starts at boot on port 4150:
 
 ```
 atmosphere/contents/4200000000004150/exefs.nsp
@@ -87,537 +38,158 @@ atmosphere/contents/4200000000004150/flags/boot2.flag
 config/sys-autopilot/config.ini
 ```
 
-Reboot. The server starts automatically at boot (boot2) and listens on port
-4150 by default.
-
-> The console is held awake while the sysmodule runs, because sleep powers
-> down the WLAN module and the server stops answering until someone presses a
-> button on the console. Set `keep_awake = false` in `config.ini` to let it
-> sleep normally.
+The console finds itself on the LAN as `switch-<last 4 of serial>.local`
+(mDNS). `scripts/discover.sh` lists every console on the subnet.
 
 ## Configuration
 
-`sdmc:/config/sys-autopilot/config.ini` (created automatically on first boot
-if missing):
+`sdmc:/config/sys-autopilot/config.ini`, created on first boot. Changes apply
+after a reboot.
 
 ```ini
 [server]
-; TCP port the HTTP server listens on.
 port = 4150
-
-; Name advertised on the local network via mDNS / DNS-SD (Bonjour).
-; The console becomes reachable at '<hostname>.local' and advertises the
-; '_sys-autopilot._tcp' service so clients can discover it without an IP.
-; Leave blank to auto-generate 'switch-<last 4 of serial>' (unique per console).
+; Blank = switch-<last 4 of serial>.
 hostname =
-
-; Optional authentication. Auth is enforced when EITHER a bearer token
-; is set, or both username and password are set (HTTP Basic).
-; Clients may then use 'Authorization: Bearer <token>' or Basic auth.
-; Setting username+password also enables the OAuth browser login flow
-; for MCP clients (see below).
+; Bearer token.
 token =
+; Basic auth. Also enables the OAuth login for MCP clients.
 username =
 password =
-
-; Write diagnostics to log.txt next to this file (the sysmodule has no
-; console output). Off by default; set to true when troubleshooting.
+; Write sdmc:/config/sys-autopilot/log.txt.
 log = false
 
 [power]
-; Hold off auto-sleep while this sysmodule runs. Sleep powers down the
-; WLAN module, so the console stops answering until someone presses a
-; button on it. Nothing is persisted: set this to false and the console
-; sleeps again according to System Settings.
+; Hold off auto-sleep (sleep turns the WLAN off).
 keep_awake = true
 ```
 
-Changes take effect after a reboot. Note this is plain HTTP — auth protects
-against casual LAN access only. OAuth-issued tokens live in
-`config/sys-autopilot/tokens.txt` next to this file.
+Auth is on when `token` is set, or both `username` and `password`. It is plain
+HTTP: treat the API as LAN-trusted.
 
-> The sysmodule has no console output. To capture diagnostics, set `log = true`
-> in `config.ini` and reboot — it appends to
-> `sdmc:/config/sys-autopilot/log.txt`.
+## MCP
 
-## Network discovery (mDNS / Bonjour)
+The endpoint is `POST /mcp` (stateless Streamable HTTP, JSON-RPC 2.0).
 
-So you don't have to chase the console's DHCP-assigned IP, the sysmodule
-advertises itself on the local network via multicast DNS (the same Bonjour /
-zeroconf mechanism used by printers and Chromecasts). Two things are exposed:
-
-- **A hostname** — the console answers to `<hostname>.local`. When `hostname`
-  is blank it defaults to `switch-<last 4 of serial>` (e.g. `switch-5322`),
-  unique per console. Use it anywhere you'd use the IP:
-
-  ```sh
-  curl http://switch-5322.local:4150/status
-  ```
-
-- **A discoverable service** — `_sys-autopilot._tcp`. Clients can find every
-  console on the subnet without knowing any name or IP, then read its details
-  from the advertised TXT record:
-
-  | TXT key | Example | Meaning |
-  |---|---|---|
-  | `version` | `1.3.0` | sys-autopilot version |
-  | `path` | `/mcp` | MCP endpoint path |
-  | `auth` | `oauth` / `token` / `none` | Configured auth scheme |
-  | `model` | `oled` | Console model (`v1`/`v2`/`lite`/`oled`) |
-  | `firmware` | `19.0.1` | Horizon OS version |
-  | `atmosphere` | `1.7.1` | Atmosphère/Exosphère version (when available) |
-
-Browse from any machine on the same network:
+With `username`/`password` set, clients that support MCP OAuth need nothing
+else. The first request opens a login page served by the console:
 
 ```sh
-# Convenience wrapper (auto-detects dns-sd or avahi):
-scripts/discover.sh
-
-# …or use the platform tools directly:
-dns-sd -B _sys-autopilot._tcp           # macOS / Windows (Bonjour)
-avahi-browse -r _sys-autopilot._tcp     # Linux (avahi-utils)
+claude mcp add --transport http switch http://switch-5322.local:4150/mcp
 ```
 
-The serial-based default keeps multiple consoles from colliding; set an
-explicit `hostname` in `config.ini` if you'd prefer a friendly name.
+With a static token instead:
 
-> mDNS is **link-local**: it works within a single subnet but does not cross
-> routers/VLANs/VPNs. For cross-subnet access, give the console a DHCP
-> reservation and a name on your router/DNS instead.
-
-## MCP (Model Context Protocol)
-
-The sysmodule speaks MCP natively at `POST /mcp` (stateless Streamable HTTP
-transport, JSON-RPC 2.0). Point any MCP client directly at the console:
-
-```jsonc
-// .mcp.json (Claude Code), or equivalent in Cursor/VS Code/etc.
+```json
 {
   "mcpServers": {
     "switch": {
       "type": "http",
       "url": "http://switch-5322.local:4150/mcp",
-      "headers": {
-        "Authorization": "Bearer <token from config.ini>"
-      }
+      "headers": { "Authorization": "Bearer <token>" }
     }
   }
 }
 ```
 
-Omit `headers` when auth is not configured. Replace
-`switch-5322.local` with your console's `<hostname>.local` (or its IP
-if mDNS isn't available on your network).
+OAuth tokens never expire. They are stored one per line in
+`config/sys-autopilot/tokens.txt`; delete a line to revoke it.
 
-### OAuth browser login (no manual headers)
+| Area | Tools |
+|---|---|
+| Screen | `screenshot` (returned as an image the agent sees) |
+| Buttons | `tap_buttons`, `tap_sequence`, `hold_buttons`, `release_buttons`, `set_stick`, `clear_input` |
+| Touch | `tap_screen`, `swipe_screen` (1280x720, same space as the screenshot; handheld only) |
+| Files | `list_directory`, `read_file` (negative `offset` = tail), `upload_file`, `move_file`, `delete_file`, `hash_file` |
+| Processes | `process_status`, `process_start`, `process_stop`, `process_restart` |
+| Settings | `get_*` / `set_*` for `theme`, `nickname`, `brightness`, `volume`, `auto_time`, `datetime`; `airplane_mode` |
+| System | `status`, `list_installed_titles`, `get_dns`, `set_dns`, `sleep`, `restart`, `power_off` |
+| Auth | `create_token`, `revoke_token` |
 
-When `username` and `password` are set in `config.ini`, sys-autopilot also
-acts as a minimal OAuth 2.1 authorization server. MCP clients that support
-the spec's auth flow (Claude Code, etc.) need **zero manual configuration**:
-add the server URL, and on the first 401 the client discovers the OAuth
-metadata, opens your browser at a login page served by the Switch, and after
-you sign in with the config.ini credentials it receives a bearer token
-automatically.
+Buttons: `A B X Y L R ZL ZR PLUS MINUS UP DOWN LEFT RIGHT LSTICK RSTICK HOME
+CAPTURE`.
+
+Upload large files (`.nro`, `.nsp`) with `curl -T`, not `upload_file`: tool
+arguments are generated token by token, so big uploads cost a lot of context.
+
+`airplane_mode` is one-way: it cuts the server off, and wireless must be
+turned back on at the console.
+
+## Reloading a sysmodule
 
 ```sh
-claude mcp add --transport http switch http://switch-5322.local:4150/mcp
-# first use triggers the browser login
+curl -X POST http://<ip>:4150/process/stop -d '{"titleId":"690000000000000d"}'
+curl -T exefs.nsp "http://<ip>:4150/files?path=/atmosphere/contents/690000000000000d/exefs.nsp"
+curl -X POST http://<ip>:4150/process/start -d '{"titleId":"690000000000000d"}'
 ```
 
-Details:
-
-- Issued tokens are **non-expiring** and stored one-per-line in
-  `sdmc:/config/sys-autopilot/tokens.txt` (with an `# issued <date>` comment).
-  Revoke a token by deleting its line — the file is re-read when it changes.
-- Implements RFC 9728 protected-resource metadata, RFC 8414 AS metadata,
-  RFC 7591 dynamic client registration, and the authorization-code grant
-  with PKCE S256 (required).
-- The static `token =` and HTTP Basic options still work for clients without
-  OAuth support.
-- Note: it's OAuth over plain HTTP on your LAN — the flow is for
-  *convenience*, not transport security. A few clients hard-require HTTPS
-  for OAuth; for those, fall back to a static token header.
-
-### Tools
-
-| Tool | Description |
-|---|---|
-| `screenshot` | Returns the current screen as an **image content block** — the agent sees it directly |
-| `tap_buttons` | Press + release buttons (`buttons: ["A"]`, optional `durationMs`) |
-| `tap_sequence` | Up to 32 taps in one call (menu navigation without round-trips) |
-| `hold_buttons` / `release_buttons` | Persistent button state |
-| `set_stick` | Analog stick (`side`, `x`/`y` in -1..1, optional `durationMs`) |
-| `tap_screen` | Tap the touch screen at a pixel coordinate (same 1280x720 space as the screenshot) |
-| `swipe_screen` | Drag across the touch screen (`fromX/fromY` to `toX/toY`, `durationMs`) |
-| `clear_input` | Release everything, recenter sticks |
-| `status` | Server version, firmware, controller state, uptime, battery % / charging |
-| `list_directory` | JSON listing of an SD card directory |
-| `read_file` | Read text files (32 KB pages, negative `offset` = tail) — ideal for logs |
-| `upload_file` | Write a file (base64 `content`, **streamed to SD — no size cap**) |
-| `move_file` | Rename or move a file or directory (destination parents are created, an existing destination is never overwritten) |
-| `delete_file` | Delete a file / empty directory |
-| `hash_file` | SHA-256 a file (streamed, any size); optional `expected` returns `matched` — verify an upload in one call |
-| `get_theme` / `set_theme` | Read / set the system UI theme (`light` or `dark`; the visible change applies after the HOME menu reloads — sleep/wake or reboot) |
-| `get_nickname` / `set_nickname` | Read / set the console's device nickname |
-| `get_brightness` / `set_brightness` | Read / set screen brightness (`0.0`–`1.0`) |
-| `get_volume` / `set_volume` | Read / set master volume (`0.0`–`1.0`) |
-| `process_status` | Is the program with this `titleId` running? Returns its pid |
-| `process_start` / `process_stop` | Launch / terminate a program by `titleId` (works for sysmodules with no `boot2.flag`) |
-| `process_restart` | Stop, wait for it to actually exit, then start — the normal way to load a rebuilt sysmodule |
-| `airplane_mode` | Enable airplane mode (disable wireless). **One-way: cuts the server off; cannot be undone remotely** |
-
-Button names: `A B X Y L R ZL ZR PLUS MINUS UP DOWN LEFT RIGHT LSTICK RSTICK
-HOME CAPTURE` (aliases: `START`, `SELECT`, `DUP/DDOWN/DLEFT/DRIGHT`).
-
-`upload_file` note: content is streamed through a JSON scanner and
-base64-decoded straight to disk, so the file size is bounded by the SD card,
-not RAM. But MCP tool arguments are generated token-by-token by the model, so
-multi-megabyte uploads are context-expensive — deploy `.nro` builds with
-`curl -T` against the raw HTTP API instead.
-
-## File explorer
-
-Point a browser at the console and you get a small file manager, served by the
-sysmodule itself:
-
-```
-http://<ip>:4150/          -> redirects to /explorer
-```
-
-Browse the SD card, open a text file and edit it in place (Save writes it
-back), upload by drag-and-drop, download, rename or move (edit the path in
-the prompt), delete. The **live** checkbox
-re-reads the open file every 2s and keeps the view pinned to the end, which
-makes it a log tail. The page is the same origin as the API, so it just calls
-`/files` directly.
-
-When `username` and `password` are set in `config.ini`, the browser asks for
-them on the first request and reuses them for everything the page does. A
-token-only setup has no browser login: the API still works with
-`Authorization: Bearer`, but the explorer cannot sign in.
+A program does not need `flags/boot2.flag` to be started this way. Leave the
+flag off while developing: a build that crashes at boot then cannot take the
+console down, and you can still upload the fix. `stop` is a hard kill.
 
 ## REST API
 
-All endpoints return JSON unless noted. POST endpoints take JSON request
-bodies. When auth is configured, send `Authorization: Bearer <token>` (or
-Basic) with every request.
-
-The `<ip>` in the examples below can be replaced with the console's
-mDNS name (e.g. `switch-5322.local`) — see
-[Network discovery](#network-discovery-mdns--bonjour).
-
-### Screenshots
+All responses are JSON unless noted. Send `Authorization: Bearer <token>` (or
+Basic) when auth is on. Paths are rooted at the SD card.
 
 ```
-GET /screenshot[?stack=screenshot|default|lcd|recording|lastframe]
-```
-
-Returns the current screen as `image/jpeg` (1280x720).
-
-```sh
-curl -o screen.jpg http://<switch-ip>:4150/screenshot
-```
-
-### Controller input
-
-A virtual Pro Controller is attached automatically on the first input request
-(it becomes player 1 when no physical controllers are connected).
-
-```
-POST /input/tap      {"buttons":["A","B"],"durationMs":100}
-POST /input/hold     {"buttons":["ZL"]}
-POST /input/release  {"buttons":["ZL"]}
+GET  /screenshot                                  image/jpeg, 1280x720
+POST /input/tap      {"buttons":["A"],"durationMs":100}
+POST /input/hold | /input/release  {"buttons":["ZL"]}
 POST /input/stick    {"side":"left","x":1.0,"y":0.0,"durationMs":500}
-POST /input/clear    (empty body)
-POST /controller/attach | /controller/detach
+POST /input/clear | /controller/attach | /controller/detach
+POST /input/touch    {"x":640,"y":360}
+POST /input/swipe    {"fromX":640,"fromY":600,"toX":640,"toY":150,"durationMs":250}
+
+GET    /files?path=/switch/app/log.txt[&offset=-4096]   read (or list a directory)
+PUT    /files?path=/switch/app.nro                      upload the request body
+DELETE /files?path=/switch/app.nro                      delete a file or empty directory
+POST   /files/move?path=/a.nro&to=/b.nro                rename / move, never overwrites
+GET    /files/hash?path=/switch/app.nro                 SHA-256
+
+GET  /process?titleId=<id>                        running + pid
+POST /process/start | /process/stop | /process/restart  {"titleId":"<id>"}
+
+POST|PUT /install[?storage=sd|nand]               stream an NSP or XCI (not NSZ)
+GET  /titles                                      installed applications
+GET|POST /network/dns                             {"primary":"…","secondary":"…"} or {"automatic":true}
+GET|POST /settings/{theme,nickname,brightness,volume,auto-time,datetime}
+POST /settings/airplane                           one-way, see above
+POST /power/sleep | /power/restart | /power/off
+GET  /status                                      version, firmware, heap, battery, uptime
 ```
 
-`x`/`y` are floats in `[-1.0, 1.0]`. With `durationMs`, `/input/stick`
-recenters afterwards. Durations are capped at 10s.
+## File explorer
+
+Open `http://<console>:4150/` in a browser: browse, edit and save (Ctrl+S),
+upload by drag and drop, download, rename, delete, tail a log live, reboot. It
+signs in with Basic auth, so it needs `username`/`password`.
+
+## Building
+
+Needs [devkitPro](https://devkitpro.org/) with `switch-dev`.
 
 ```sh
-curl -X POST http://<ip>:4150/input/tap \
-     -H 'Content-Type: application/json' \
-     -d '{"buttons":["RIGHT"]}'
+make                              # sys-autopilot.nsp
+make dist                         # SD card tree in dist/
+make MCP=0                        # no MCP or OAuth: about 100 KB code and 120 KB RAM less
+make FEATURES="explorer power"    # optional features to include (run make clean first)
+./tests/run.sh                    # host tests, needs only a C compiler
 ```
 
-### Touch screen
+The optional features are `explorer install network power process titles`
+(all on by default). `status screen input files settings` are always built.
 
-Injected through `hiddbg`, independently of the virtual controller: no
-attach, and a physical controller can stay connected. Coordinates are pixels
-in the panel's 1280x720 space, which is exactly the space of the JPEG
-`/screenshot` returns — read a target off the screenshot and tap it.
+Push a tag (`git tag 1.6.0 && git push origin 1.6.0`) to publish a release.
 
-```
-POST /input/touch    {"x":640,"y":360,"durationMs":100}
-POST /input/swipe    {"fromX":200,"fromY":600,"toX":200,"toY":100,"durationMs":300}
-```
+## Limitations
 
-Both are synchronous: the gesture is driven frame by frame (~60Hz) for
-`durationMs`, and the panel is handed back to the player before the response.
-`durationMs` defaults to 100 (tap) / 300 (swipe), with a 32ms floor and the
-usual 10s cap. Out-of-range coordinates are rejected with 400.
-
-```sh
-# scroll a list by flicking up from the bottom of the screen
-curl -X POST http://<ip>:4150/input/swipe \
-     -H 'Content-Type: application/json' \
-     -d '{"fromX":640,"fromY":600,"toX":640,"toY":150,"durationMs":250}'
-```
-
-The panel is only live in handheld mode — docked, the console ignores touch
-entirely (just as it ignores a finger), so this is no substitute for the
-controller endpoints.
-
-### Files
-
-All paths are rooted at the SD card (`sdmc:`); `..` traversal is rejected.
-
-```
-GET    /files?path=/switch/myapp/log.txt          download / read a file
-GET    /files?path=/switch/myapp/log.txt&offset=-4096   tail: last 4 KB
-GET    /files/hash?path=/switch/myapp.nro          SHA-256 digest (JSON)
-GET    /files?path=/switch/                       directory listing (JSON)
-PUT    /files?path=/switch/myapp.nro              upload (raw request body)
-DELETE /files?path=/switch/myapp.nro              delete file / empty dir
-POST   /files/move?path=/switch/a.nro&to=/switch/b.nro   rename / move (never overwrites)
-```
-
-```sh
-# Deploy a build
-curl -T myapp.nro "http://<ip>:4150/files?path=/switch/myapp.nro"
-# Verify it landed intact (compare against `shasum -a 256 myapp.nro`)
-curl "http://<ip>:4150/files/hash?path=/switch/myapp.nro"
-# Tail a log
-curl "http://<ip>:4150/files?path=/switch/myapp/debug.log&offset=-2048"
-```
-
-### Install a title
-
-Stream an **NSP** or **XCI** straight to the console and install it (NCM content
-storage + application record) — no SD-card staging, nothing to clean up
-afterwards. The title appears on the HOME menu when done. The container format
-is auto-detected from the stream, so the same endpoint handles both.
-
-```
-POST|PUT /install[?storage=sd|nand]    install a streamed NSP or XCI (default: sd)
-```
-
-```sh
-# -g disables curl globbing so the [titleId] brackets in the name are literal.
-curl -g -T "Game [0100...000][v0].nsp" "http://<ip>:4150/install"
-# -> {"ok":true,"titleId":"0100...000","version":0,"message":"installed ..."}
-
-# XCI works the same way (the NCAs in its "secure" partition are installed):
-curl -g -T "Game [0100...000][v0].xci" "http://<ip>:4150/install"
-
-# install to internal storage instead of the SD card:
-curl -g -T game.nsp "http://<ip>:4150/install?storage=nand"
-```
-
-The file is streamed (its size comes from `Content-Length`, which `curl -T`
-sends), so multi-GB titles install without buffering to disk. For NSP, each
-NCA's SHA-256 is verified against its content id as it is written; a failed
-install rolls back the content it wrote. (XCI gamecard NCAs are not guaranteed
-to hash to their filename id, so that per-NCA check is skipped for XCI; the
-meta NCA is still verified.) Both trimmed and full XCI layouts are supported.
-
-> Uncompressed containers only (no **NSZ** / **XCZ**). Installing commercial
-> titles still requires a valid ticket and, for some games, a linked account —
-> that is the title's own DRM, independent of the installer.
-
-### List installed titles
-
-List the applications installed on the console (base titles only — not updates
-or DLC), across the SD card, internal storage, and an inserted gamecard.
-
-```
-GET /titles
-```
-
-```json
-{"titles":[
-  {"titleId":"0100000000010000","version":0,"storage":"sd","name":"Some Game"},
-  {"titleId":"0100000000020000","version":0,"storage":"nand","name":"Another Game"}
-]}
-```
-
-`name` is the title's display name (from its control data); it may be empty if
-the control data isn't available. `storage` is `sd`, `nand`, or `gamecard`.
-Also exposed as the `list_installed_titles` MCP tool.
-
-### Network DNS
-
-Read or change the DNS servers for the active network connection. Useful for
-pointing the console at a custom/black-hole DNS (e.g. 90DNS) while keeping it on
-the LAN.
-
-```
-GET  /network/dns                                  read current DNS config
-POST /network/dns                                  set DNS
-```
-
-```sh
-curl --netrc "http://<ip>:4150/network/dns"
-# -> {"automatic":true,"primary":"192.168.1.1","secondary":"0.0.0.0"}
-
-# set manual DNS:
-curl --netrc -X POST "http://<ip>:4150/network/dns" \
-  -d '{"primary":"207.246.121.77","secondary":"163.172.141.219"}'
-
-# revert to DHCP-provided DNS:
-curl --netrc -X POST "http://<ip>:4150/network/dns" -d '{"automatic":true}'
-```
-
-Setting DNS rewrites the active connection profile, so the connection may blip
-briefly while it re-applies. Also exposed as the `get_dns` / `set_dns` MCP
-tools. (Requires the `nifm:a` admin service, which the sysmodule opens at boot.)
-
-### Process control
-
-```
-GET  /process?titleId=690000000000000d   -> {"titleId":"...","running":true,"pid":"73"}
-POST /process/start    {"titleId":"690000000000000d"}
-POST /process/stop     {"titleId":"690000000000000d"}
-POST /process/restart  {"titleId":"690000000000000d"}
-```
-
-Start, stop and query any program by its title id — the id `GET /titles`
-reports, and the directory name under `/atmosphere/contents` for a sysmodule.
-A `0x` prefix is accepted. Process ids are returned as strings, since a `u64`
-does not survive a JSON number in most clients.
-
-This is what makes it possible to iterate on a sysmodule without rebooting:
-stop it, `PUT` the rebuilt `exefs.nsp` through `/files`, then start it again.
-
-A program does **not** need a `flags/boot2.flag` to be launched this way; that
-flag only controls whether boot2 starts it automatically. Leaving it off while
-developing is the safer arrangement, because a build that crashes during
-startup can then no longer take the console down with it before anything is
-reachable — you keep a working server to upload the fix through.
-
-`/process/restart` waits for the old process to actually disappear before
-relaunching (up to 3s), so a caller never races a half-dead process. Note that
-`stop` is a hard kill: the program does not shut down cleanly, and one holding
-system resources may leave them attached until the next reboot.
-
-### Status
-
-```
-GET /status
-```
-
-```json
-{"version":"1.1.0","firmware":"19.0.1","controllerAttached":true,"keepAwake":true,"uptimeSeconds":4242,"heapSizeBytes":1048576,"heapArenaBytes":612352,"heapUsedBytes":530112,"batteryPercent":87,"charging":true}
-```
-
-`batteryPercent`/`charging` are included when the battery service is available.
-The `heap*` fields describe the sysmodule's own heap: its fixed size, how far
-it has grown (close to its high-water mark), and what is allocated now.
-
-### System settings
-
-```
-GET  /settings/theme                      -> {"theme":"light"|"dark"}
-POST /settings/theme       {"theme":"dark"}
-GET  /settings/nickname                    -> {"nickname":"..."}
-POST /settings/nickname    {"nickname":"Living Room"}
-GET  /settings/brightness                  -> {"brightness":0.5}   (0.0-1.0)
-POST /settings/brightness  {"brightness":0.8}
-GET  /settings/volume                      -> {"volume":0.5}       (0.0-1.0)
-POST /settings/volume      {"volume":0.3}
-POST /settings/airplane    (empty body)    disable wireless (one-way)
-GET  /settings/auto-time                   -> {"autoTime":true}
-POST /settings/auto-time   {"autoTime":false}
-GET  /settings/datetime                    -> {"year":2026,...,"timezone":"America/New_York"}
-POST /settings/datetime    {"year":2026,"month":6,"day":19,"hour":14,"minute":30,"timezone":"America/New_York"}
-```
-
-`POST /settings/datetime` accepts any subset of fields (omitted ones keep their
-current value), interprets the time in the given/current timezone, and disables
-internet time sync so the manual value sticks. `theme` updates the stored
-setting immediately but the HOME menu only shows it after it reloads
-(sleep/wake or reboot).
-
-```sh
-curl -X POST "http://<ip>:4150/settings/theme" \
-     -H 'Content-Type: application/json' -d '{"theme":"dark"}'
-curl "http://<ip>:4150/settings/brightness"
-```
-
-> `POST /settings/airplane` disables all wireless and is **one-way**: the
-> server becomes unreachable and wireless must be re-enabled physically on the
-> console. There is intentionally no remote re-enable.
-
-## Project layout
-
-```
-source/main.c          sysmodule entry (heap, __appInit service setup)
-source/common/         shared server core
-  config.c             INI config loader (writes default on first boot)
-  http.c               minimal HTTP/1.1 parser + responses + Bearer/Basic auth
-  server.c             non-blocking listen/accept loop (HTTP + mDNS)
-  mdns.c               mDNS / DNS-SD responder (<hostname>.local + service)
-  device_info.c        device facts for the DNS-SD TXT record (model/fw/ams)
-  routes.c             REST endpoint dispatch, /status
-  explorer.c           built-in browser file explorer (/ and /explorer)
-  explorer.html        its page source (edit this one)
-  explorer_page.h      generated C string (scripts/gen_explorer.py)
-  mcp.c                MCP endpoint: JSON-RPC 2.0 dispatch + tools
-  mcp_tools.h          generated tools/list payload (scripts/gen_tools.py)
-  jstream.c            streaming JSON pre-pass (diverts upload content to disk)
-  json.c               jsmn wrapper helpers (parse/get/escape)
-  scratch.c            request-scoped arena for large transient buffers
-  base64.c             streaming base64 encoder/decoder
-  buttons.c            button name table (host-testable)
-  apiargs.c            shared JSON argument parsing (REST + MCP)
-  screen.c             caps:sc JPEG capture
-  input.c              HDLS virtual Pro Controller
-  files.c              SD card file/directory endpoints + helpers
-  settings.c           system settings (theme/nickname/brightness/volume/battery)
-  install.c            streamed NSP installer (PFS0 parse + NCM + content-meta)
-  nx_ext.c             ns/es IPC wrappers libnx doesn't expose (record/ticket)
-lib/jsmn/              vendored JSON tokenizer (MIT)
-tests/                 host-side test suite (./tests/run.sh)
-scripts/discover.sh    find consoles on the LAN via DNS-SD (dns-sd/avahi)
-sys-autopilot.json     NPDM descriptor (title ID 4200000000004150, services:
-                       bsd:u caps:sc hid:dbg set:sys fsp-srv spl: nifm:u
-                       lbl audctl psm ncm ns:am2 es ...)
-```
-
-## Releases & contributing
-
-CI (GitHub Actions) runs the host test suite on every push/PR and builds the
-sysmodule inside the `devkitpro/devkita64` container, uploading the SD card
-layout as an artifact.
-
-To cut a release, push a tag:
-
-```sh
-git tag 1.6.0 && git push origin 1.6.0
-```
-
-The release workflow builds with that tag as `APP_VERSION` and publishes a
-GitHub Release with the SD-card zip attached and notes generated from the
-commits since the previous tag. Local builds report `git describe` (the
-nearest tag, or the commit hash) as their version.
-
-## Notes & limitations
-
-- Screenshots fail (HTTP 500 / tool error with the Horizon result code) in the
-  rare contexts where the OS blocks capture.
-- The server is single-threaded by design: input taps with a duration block
-  until released, which conveniently serializes agent actions. Socket I/O is
-  non-blocking under the hood (poll()-based with a 10s inactivity timeout),
-  so a stalled or misbehaving client cannot wedge the server.
-- MCP transport details: stateless (no session IDs), plain JSON responses (no
-  SSE), `GET /mcp` returns 405, JSON-RPC batching unsupported (removed in MCP
-  2025-06-18 anyway).
-- Touch input only reaches applications in handheld mode; docked, the panel
-  is off, so `/input/touch` succeeds while nothing happens on screen.
-- No TLS; treat the API as LAN-trusted.
+- Single-threaded: a tap with a duration blocks until it is released, which
+  keeps agent actions in order.
+- Touch input only works in handheld mode.
+- Screenshots fail where the OS blocks capture.
+- No TLS.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The vendored `lib/jsmn` keeps its own MIT
-license.
+MIT, see [LICENSE](LICENSE). The vendored `lib/jsmn` keeps its own MIT license.
