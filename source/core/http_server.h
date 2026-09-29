@@ -42,8 +42,6 @@ bool http_server_on_sleep(HttpSleepHook hook);
 // memory. Used by the server loop; exposed so host tests can drive routes.
 void http_server_dispatch(const Config *cfg, HttpRequest *req);
 
-// Runs the server (blocking). Binds to cfg->port and retries bind/listen
-// failures internally. `idle` is invoked roughly every 100ms and between
-// requests; returning false shuts the server down (used by the dev .nro app).
-// Pass NULL to run forever (sysmodule).
-void http_server_run(const Config *cfg, HttpIdleCb idle);
+// Runs the server forever. Binds to cfg->port and retries bind/listen
+// failures internally.
+void http_server_run(const Config *cfg);

@@ -52,7 +52,6 @@ On top of upstream it adds:
 ```sh
 make            # builds sys-autopilot.nsp (the sysmodule exefs)
 make dist       # assembles an SD-card-ready tree under dist/
-make -C app     # builds the dev .nro flavor (see below)
 ./tests/run.sh  # host-side test suite (no devkitPro required)
 ```
 
@@ -575,19 +574,6 @@ curl "http://<ip>:4150/settings/brightness"
 > server becomes unreachable and wireless must be re-enabled physically on the
 > console. There is intentionally no remote re-enable.
 
-## Dev flavor (.nro)
-
-Reloading a sysmodule requires a reboot, so for fast iteration the same server
-core also builds as a regular homebrew application:
-
-```sh
-make -C app
-nxlink -s app/sys-autopilot-app.nro
-```
-
-It reads the same `config.ini`, logs requests to the console, and exits with
-the `+` button.
-
 ## Project layout
 
 ```
@@ -617,7 +603,6 @@ source/common/         shared server core
   install.c            streamed NSP installer (PFS0 parse + NCM + content-meta)
   nx_ext.c             ns/es IPC wrappers libnx doesn't expose (record/ticket)
 lib/jsmn/              vendored JSON tokenizer (MIT)
-app/                   dev .nro flavor
 tests/                 host-side test suite (./tests/run.sh)
 scripts/discover.sh    find consoles on the LAN via DNS-SD (dns-sd/avahi)
 sys-autopilot.json     NPDM descriptor (title ID 4200000000004150, services:
@@ -639,9 +624,9 @@ pnpm changeset        # record a change + semver intent
 ```
 
 When changesets land on `main`, the release workflow opens a "Version
-Packages" PR; merging it bumps `package.json` (which the Makefiles inject
+Packages" PR; merging it bumps `package.json` (which the Makefile injects
 into the build as `APP_VERSION`), updates `CHANGELOG.md`, and publishes a
-GitHub Release with the SD-card zip and dev `.nro` attached.
+GitHub Release with the SD-card zip attached.
 
 ## Notes & limitations
 

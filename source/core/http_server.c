@@ -158,8 +158,7 @@ static void close_client(int fd) {
 // Serves an accepted connection (one or more keep-alive requests).
 static void handle_connection(int fd, const Config *cfg) {
     // Non-blocking I/O: the http layer waits via poll() with an inactivity
-    // timeout, so a stalled client can't wedge the server, and the idle
-    // callback keeps running during slow transfers.
+    // timeout, so a stalled client can't wedge the server.
     set_nonblocking(fd);
 
     // Serve multiple requests on one connection (HTTP/1.1 keep-alive). Bounded
@@ -180,19 +179,10 @@ static void handle_connection(int fd, const Config *cfg) {
     }
 }
 
-// Sleeps ~1s in 100ms slices, invoking the idle callback each slice so the
-// dev app stays responsive (input is sampled per idle call; a long sleep
-// would make button presses easy to miss). Returns false on idle shutdown.
-static bool retry_wait(HttpIdleCb idle) {
-    for (int i = 0; i < 10; i++) {
-        if (idle && !idle())
-            return false;
-        svcSleepThread(100000000LL); // 100ms
-    }
-    return true;
-}
+// Delay before retrying a failed bind/listen or a broken poll.
+#define RETRY_WAIT_NS 1000000000LL // 1s
 
-void http_server_run(const Config *cfg, HttpIdleCb idle) {
+void http_server_run(const Config *cfg) {
     int listen_fd = -1;
     int mdns_fd = -1;
     bool suspended = false;
@@ -222,9 +212,6 @@ void http_server_run(const Config *cfg, HttpIdleCb idle) {
     // retried, so a tick count is not a clock. 0 means "ping now", so the
     // first ping goes out before the console has had time to idle out.
     u64 keepawake_next = 0;
-
-    // Let the http I/O layer drive the idle callback during transfers too.
-    http_set_idle_callback(idle);
 
     for (;;) {
         // Participate in sleep/wake transitions: all sockets must be closed
@@ -266,8 +253,6 @@ void http_server_run(const Config *cfg, HttpIdleCb idle) {
             keepawake_next = 0;
         }
         if (suspended) {
-            if (idle && !idle())
-                break;
             svcSleepThread(100000000LL); // 100ms between power_poll checks
             continue;
         }
@@ -321,8 +306,7 @@ void http_server_run(const Config *cfg, HttpIdleCb idle) {
             if (listen_fd < 0) {
                 LOGF("server: bind/listen on port %d failed (errno=%d), retrying\n",
                      cfg->port, errno);
-                if (!retry_wait(idle))
-                    return;
+                svcSleepThread(RETRY_WAIT_NS);
                 continue;
             }
             LOGF("server: listening on port %d\n", cfg->port);
@@ -369,9 +353,6 @@ void http_server_run(const Config *cfg, HttpIdleCb idle) {
         }
         int pr = poll(pfds, nfds, 100);
 
-        if (idle && !idle())
-            break;
-
         if (pr < 0) {
             // bsd service hiccup; rebuild both sockets.
             LOGF("server: poll failed (errno=%d), rebuilding listener\n", errno);
@@ -381,8 +362,7 @@ void http_server_run(const Config *cfg, HttpIdleCb idle) {
                 mdns_close(mdns_fd);
                 mdns_fd = -1;
             }
-            if (!retry_wait(idle))
-                break;
+            svcSleepThread(RETRY_WAIT_NS);
             continue;
         }
         if (pr == 0)
@@ -423,10 +403,4 @@ void http_server_run(const Config *cfg, HttpIdleCb idle) {
             // iteration and quiesces sockets/HDLS as usual.
         }
     }
-
-    http_set_idle_callback(NULL);
-    if (listen_fd >= 0)
-        close(listen_fd);
-    if (mdns_fd >= 0)
-        mdns_close(mdns_fd);
 }

@@ -28,11 +28,6 @@ typedef struct {
     char   buf[HTTP_MAX_HEADER];
 } HttpRequest;
 
-// Optional callback invoked while waiting on socket I/O (~every 100ms).
-// Return false to abort the transfer (used for clean shutdown).
-typedef bool (*HttpIdleCb)(void);
-void http_set_idle_callback(HttpIdleCb cb);
-
 // Set whether response helpers advertise keep-alive vs close. The server sets
 // this per request before dispatching the handler.
 void http_set_keep_alive(bool on);

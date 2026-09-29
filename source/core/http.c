@@ -13,19 +13,11 @@
 
 // Abort a connection after this much I/O inactivity.
 #define HTTP_IO_TIMEOUT_MS 10000
-// Poll in short slices so the idle callback keeps running during transfers.
-#define HTTP_POLL_SLICE_MS 100
-
-static HttpIdleCb g_idle_cb;
 
 // Whether the response helpers should advertise keep-alive. Set per request by
 // the server once it decides the connection is reusable. Defaults to close so
 // any path that forgets to set it is safe.
 static bool g_keep_alive;
-
-void http_set_idle_callback(HttpIdleCb cb) {
-    g_idle_cb = cb;
-}
 
 void http_set_keep_alive(bool on) {
     g_keep_alive = on;
@@ -40,25 +32,15 @@ static const char *conn_hdr(void) {
 }
 
 // Waits until fd is ready for `events`. Returns false on inactivity timeout,
-// poll error, or when the idle callback requests shutdown.
+// or poll error.
 static bool io_wait(int fd, short events) {
-    int waited_ms = 0;
-    while (waited_ms < HTTP_IO_TIMEOUT_MS) {
-        if (g_idle_cb && !g_idle_cb())
-            return false;
-        struct pollfd pfd = { .fd = fd, .events = events };
-        int pr = poll(&pfd, 1, HTTP_POLL_SLICE_MS);
-        if (pr < 0) {
-            if (errno == EINTR)
-                continue;
-            return false;
-        }
-        // On POLLERR/POLLHUP, return true so recv/send surfaces the error.
-        if (pr > 0 && (pfd.revents & (events | POLLERR | POLLHUP)))
-            return true;
-        waited_ms += HTTP_POLL_SLICE_MS;
-    }
-    return false;
+    struct pollfd pfd = { .fd = fd, .events = events };
+    int pr;
+    do {
+        pr = poll(&pfd, 1, HTTP_IO_TIMEOUT_MS);
+    } while (pr < 0 && errno == EINTR);
+    // On POLLERR/POLLHUP, return true so recv/send surfaces the error.
+    return pr > 0 && (pfd.revents & (events | POLLERR | POLLHUP));
 }
 
 // recv() that tolerates non-blocking sockets: waits for readability on

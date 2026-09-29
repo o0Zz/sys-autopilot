@@ -172,7 +172,7 @@ int main(int argc, char* argv[])
     // Every feature plugs its routes and MCP tools into the servers.
     features_register(&cfg);
 
-    // Blocks forever (NULL idle callback).
-    http_server_run(&cfg, NULL);
+    // Blocks forever.
+    http_server_run(&cfg);
     return 0;
 }
