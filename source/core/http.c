@@ -209,7 +209,7 @@ bool http_read_request(int fd, HttpRequest *req) {
         cursor = next ? next + 2 : NULL;
     }
 
-    LOGF("http: %s %s%s%s\n", req->method, req->path,
+    LOGI("http", "%s %s%s%s", req->method, req->path,
          req->query[0] ? "?" : "", req->query);
     return true;
 }

@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "core/log.h"
+
 #define CONFIG_DIR  "sdmc:/config/sys-autopilot"
 #define CONFIG_PATH CONFIG_DIR "/config.ini"
 
@@ -15,9 +17,9 @@ typedef struct {
     // a default name is derived from the device serial so discovery still
     // works out of the box and two consoles don't collide.
     char hostname[64];
-    // Write diagnostics to sdmc:/config/sys-autopilot/log.txt (sysmodule has
-    // no stdout). Off by default.
-    bool log;
+    // Minimum level written to sdmc:/config/sys-autopilot/log.txt (sysmodule
+    // has no stdout). LOG_LEVEL_OFF by default.
+    LogLevel log_level;
     // Hold off auto-sleep. Sleep powers down the WLAN module, so the server
     // becomes unreachable until someone presses a button on the console. On by
     // default.

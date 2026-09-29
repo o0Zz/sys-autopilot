@@ -93,7 +93,7 @@ bool network_set_dns(bool automatic, const char *primary, const char *secondary,
         snprintf(err, errsz, "set profile failed (0x%x)", rc);
         return false;
     }
-    LOGF("network: DNS set to %s (%s/%s)\n",
+    LOGI("network", "DNS set to %s (%s/%s)",
          automatic ? "automatic" : "manual",
          automatic ? "-" : primary,
          automatic ? "-" : (secondary && secondary[0] ? secondary : "-"));

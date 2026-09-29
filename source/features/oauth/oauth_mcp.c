@@ -41,7 +41,7 @@ static void tool_revoke_token(McpCall *call) {
                         "cannot be revoked this way)");
         return;
     }
-    LOGF("mcp: revoked a token\n");
+    LOGI("mcp", "revoked a token");
     mcp_reply_text(call, "token revoked");
 }
 

@@ -29,7 +29,7 @@ static bool g_initialized;
 bool power_init(void) {
     Result rc = pscmInitialize();
     if (R_FAILED(rc)) {
-        LOGF("power: pscmInitialize failed rc=0x%x\n", rc);
+        LOGE("power", "pscmInitialize failed rc=0x%x", rc);
         return false;
     }
 
@@ -41,7 +41,7 @@ bool power_init(void) {
     rc = pscmGetPmModule(&g_module, POWER_MODULE_ID, deps,
                          sizeof(deps) / sizeof(deps[0]), true);
     if (R_FAILED(rc)) {
-        LOGF("power: pscmGetPmModule failed rc=0x%x\n", rc);
+        LOGE("power", "pscmGetPmModule failed rc=0x%x", rc);
         pscmExit();
         return false;
     }
@@ -95,7 +95,7 @@ static bool g_spsm_ok;
 bool power_spsm_init(void) {
     Result rc = spsmInitialize();
     if (R_FAILED(rc)) {
-        LOGF("power: spsmInitialize failed rc=0x%x\n", rc);
+        LOGE("power", "spsmInitialize failed rc=0x%x", rc);
         return false;
     }
     g_spsm_ok = true;
@@ -140,7 +140,7 @@ bool power_perform(PowerAction action) {
             return false;
     }
     if (R_FAILED(rc))
-        LOGF("power: action %d failed rc=0x%x\n", action, rc);
+        LOGE("power", "action %d failed rc=0x%x", action, rc);
     return R_SUCCEEDED(rc);
 }
 
@@ -152,7 +152,7 @@ static bool g_idle_ok;
 bool power_keepawake_init(void) {
     Result rc = smGetService(&g_idle_srv, "idle:sys");
     if (R_FAILED(rc)) {
-        LOGF("power: idle:sys unavailable rc=0x%x\n", rc);
+        LOGW("power", "idle:sys unavailable rc=0x%x", rc);
         return false;
     }
     g_idle_ok = true;
@@ -178,10 +178,10 @@ void power_keepawake_tick(void) {
     static bool logged_first;
     Result rc = serviceDispatch(&g_idle_srv, 5); // ReportUserIsActive
     if (R_FAILED(rc)) {
-        LOGF("power: ReportUserIsActive failed rc=0x%x\n", rc);
+        LOGE("power", "ReportUserIsActive failed rc=0x%x", rc);
     } else if (!logged_first) {
         logged_first = true;
-        LOGF("power: keep-awake active (idle counter reset)\n");
+        LOGI("power", "keep-awake active (idle counter reset)");
     }
 }
 

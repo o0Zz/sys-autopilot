@@ -56,7 +56,7 @@ token =
 ; Basic auth. Also enables the OAuth login for MCP clients.
 username =
 password =
-; Write sdmc:/config/sys-autopilot/log.txt.
+; Write sdmc:/config/sys-autopilot/log.txt: false, error, warn, info, debug.
 log = false
 
 [power]
@@ -66,6 +66,15 @@ keep_awake = true
 
 Auth is on when `token` is set, or both `username` and `password`. It is plain
 HTTP: treat the API as LAN-trusted.
+
+Log lines are columns: level, local time, module, message. At 256 KB the file
+moves to `log.old.txt` and a new one starts.
+
+```
+|I|2026-09-29 14:03:12.345|server  | listening on port 4150
+|I|2026-09-29 14:03:15.020|http    | GET /status
+|E|2026-09-29 14:03:16.781|process | launch 0100000000010000 failed rc=0x410
+```
 
 ## MCP
 

@@ -69,13 +69,13 @@ void features_init(void) {
 #ifdef FEATURE_INSTALL
     // ncm/ns/es for the title installer.
     if (!install_init())
-        LOGF("install: services unavailable; /install disabled\n");
+        LOGW("install", "services unavailable; /install disabled");
 #endif
 
 #ifdef FEATURE_PROCESS
     // pm:shell for starting, stopping and querying other programs.
     if (!process_init())
-        LOGF("process: pm unavailable; /process disabled\n");
+        LOGW("process", "pm unavailable; /process disabled");
 #endif
 }
 

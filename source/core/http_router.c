@@ -27,7 +27,7 @@ static const char *g_resource_metadata_path;
 static bool add_route(const char *method, const char *path, HttpHandler handler,
                       bool prefix) {
     if (g_route_count >= HTTP_MAX_ROUTES) {
-        LOGF("http: route table full, dropping %s %s\n", method, path);
+        LOGW("http", "route table full, dropping %s %s", method, path);
         return false;
     }
     g_routes[g_route_count++] = (Route){ method, path, handler, prefix };
@@ -44,7 +44,7 @@ bool http_server_register_prefix(const char *method, const char *prefix, HttpHan
 
 bool http_server_add_public_prefix(const char *prefix) {
     if (g_public_count >= MAX_PUBLIC_PREFIXES) {
-        LOGF("http: public prefix table full, dropping %s\n", prefix);
+        LOGW("http", "public prefix table full, dropping %s", prefix);
         return false;
     }
     g_public_prefixes[g_public_count++] = prefix;

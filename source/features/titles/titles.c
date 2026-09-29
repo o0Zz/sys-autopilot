@@ -88,7 +88,7 @@ void titles_list(TitleInfo *titles, int max, int *out_count, void *work) {
     }
 
     *out_count = n;
-    LOGF("titles: listed %d installed application(s)\n", n);
+    LOGI("titles", "listed %d installed application(s)", n);
 }
 
 #else // !__SWITCH__ : host stub so the REST/MCP layer links in tests.

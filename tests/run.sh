@@ -24,6 +24,14 @@ echo "== test_http =="
 cc $CFLAGS -o "$OUT/test_http" test_http.c "$CORE/http.c" "$UTIL/base64.c"
 "$OUT/test_http"
 
+echo "== test_log =="
+cc $CFLAGS -DLOG_TO_FILE \
+    -DLOG_FILE_PATH="\"$FAKE_SD-log.txt\"" \
+    -DLOG_OLD_FILE_PATH="\"$FAKE_SD-log.old.txt\"" \
+    -DLOG_FILE_SIZE_MAX=1024 \
+    -o "$OUT/test_log" test_log.c "$CORE/log.c"
+"$OUT/test_log"
+
 echo "== test_explorer =="
 cc $CFLAGS -o "$OUT/test_explorer" test_explorer.c \
     "$FEAT/explorer/explorer_http.c" $ROUTER

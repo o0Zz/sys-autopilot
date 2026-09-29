@@ -198,7 +198,7 @@ static void put_files(HttpRequest *req) {
         return;
     }
 
-    LOGF("files: wrote %zu bytes to %s\n", total, fspath);
+    LOGI("files", "wrote %zu bytes to %s", total, fspath);
     http_send_json(req->fd, 201, "{\"written\":%zu,\"path\":\"%s\"}", total,
                    fspath + strlen(FILES_ROOT));
 }
@@ -239,7 +239,7 @@ static void post_move(HttpRequest *req) {
         http_send_error(req->fd, code, err);
         return;
     }
-    LOGF("files: moved %s -> %s\n", src, dst);
+    LOGI("files", "moved %s -> %s", src, dst);
     http_send_json(req->fd, 200, "{\"moved\":\"%s\",\"to\":\"%s\"}",
                    src + strlen(FILES_ROOT), dst + strlen(FILES_ROOT));
 }

@@ -43,7 +43,7 @@ static Result ensure_workbuf(void) {
         return 0;
     Result rc = hiddbgAttachHdlsWorkBuffer(&g_session_id, g_workmem, sizeof(g_workmem));
     if (R_FAILED(rc)) {
-        LOGF("input: hiddbgAttachHdlsWorkBuffer failed rc=0x%x\n", rc);
+        LOGE("input", "hiddbgAttachHdlsWorkBuffer failed rc=0x%x", rc);
         return rc;
     }
     g_workbuf_attached = true;
@@ -81,7 +81,7 @@ static Result touch_push(u32 attributes, int x, int y) {
 
     Result rc = hiddbgSetTouchScreenAutoPilotState(&st, 1);
     if (R_FAILED(rc)) {
-        LOGF("input: hiddbgSetTouchScreenAutoPilotState failed rc=0x%x\n", rc);
+        LOGE("input", "hiddbgSetTouchScreenAutoPilotState failed rc=0x%x", rc);
         return rc;
     }
     g_touch_active = true;
@@ -154,7 +154,7 @@ Result input_attach(void) {
 
     rc = hiddbgAttachHdlsVirtualDevice(&g_handle, &device);
     if (R_FAILED(rc)) {
-        LOGF("input: hiddbgAttachHdlsVirtualDevice failed rc=0x%x\n", rc);
+        LOGE("input", "hiddbgAttachHdlsVirtualDevice failed rc=0x%x", rc);
         return rc;
     }
     g_attached = true;

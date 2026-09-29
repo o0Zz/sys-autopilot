@@ -44,7 +44,7 @@ static void reopen_hiddbg(void) {
         return;
     Result rc = hiddbgInitialize();
     if (R_FAILED(rc))
-        LOGF("process: hiddbgInitialize failed rc=0x%x\n", rc);
+        LOGE("process", "hiddbgInitialize failed rc=0x%x", rc);
     smExit();
 }
 
@@ -55,7 +55,7 @@ static u64 g_last_program_id;
 bool process_init(void) {
     Result rc = pmshellInitialize();
     if (R_FAILED(rc)) {
-        LOGF("process: pmshellInitialize failed rc=0x%x\n", rc);
+        LOGE("process", "pmshellInitialize failed rc=0x%x", rc);
         return false;
     }
     g_initialized = true;
@@ -88,7 +88,7 @@ void process_status(uint64_t program_id, ProcessStatus *out) {
             smExit();
         }
         if (R_FAILED(irc)) {
-            LOGF("process: pminfoInitialize failed rc=0x%x\n", irc);
+            LOGE("process", "pminfoInitialize failed rc=0x%x", irc);
             out->running = false;
             out->pid = 0;
             return;
@@ -129,7 +129,7 @@ static bool g_boosted;
 
 static void set_boost(u64 size) {
     Result rc = pmshellBoostSystemMemoryResourceLimit(size);
-    LOGF("process: boost %llu -> rc=0x%x\n", (unsigned long long)size, rc);
+    LOGI("process", "boost %llu -> rc=0x%x", (unsigned long long)size, rc);
     if (R_SUCCEEDED(rc))
         g_boosted = size != 0;
 }
@@ -160,7 +160,7 @@ bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
     u64 pid = 0;
     Result rc = pmshellLaunchProgram(0, &loc, &pid);
     if (R_FAILED(rc)) {
-        LOGF("process: launch %016llx failed rc=0x%x\n",
+        LOGE("process", "launch %016llx failed rc=0x%x",
              (unsigned long long)program_id, rc);
         // Do not leave the application pool short, or our own input dead,
         // after a launch that never happened.
@@ -183,7 +183,7 @@ bool process_stop(uint64_t program_id, uint32_t *out_rc) {
 
     Result rc = pmshellTerminateProgram(program_id);
     if (R_FAILED(rc)) {
-        LOGF("process: terminate %016llx failed rc=0x%x\n",
+        LOGE("process", "terminate %016llx failed rc=0x%x",
              (unsigned long long)program_id, rc);
         *out_rc = rc;
         return false;
@@ -217,7 +217,7 @@ bool process_restart(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
             waited += RESTART_POLL_NS;
         }
         if (st.running) {
-            LOGF("process: %016llx still running after stop\n",
+            LOGW("process", "%016llx still running after stop",
                  (unsigned long long)program_id);
             return false;
         }

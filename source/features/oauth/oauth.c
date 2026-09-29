@@ -171,7 +171,7 @@ static void tokens_load(void) {
         g_token_count++;
     }
     fclose(f);
-    LOGF("oauth: loaded %d token(s)\n", g_token_count);
+    LOGI("oauth", "loaded %d token(s)", g_token_count);
 }
 
 // Reload when the file changed (lets users revoke by editing tokens.txt).
@@ -561,7 +561,7 @@ static void handle_authorize_post(HttpRequest *req) {
     bool user_ok = http_secure_streq(username, g_cfg->username);
     bool pass_ok = http_secure_streq(password, g_cfg->password);
     if (!user_ok || !pass_ok) {
-        LOGF("oauth: failed login attempt\n");
+        LOGW("oauth", "failed login attempt");
         send_login_page(req, "Incorrect username or password.",
                         redirect_uri, state, challenge);
         return;
@@ -585,7 +585,7 @@ static void handle_authorize_post(HttpRequest *req) {
         return;
     }
 
-    LOGF("oauth: issued auth code\n");
+    LOGI("oauth", "issued auth code");
     http_send_redirect(req->fd, location);
 }
 
@@ -648,7 +648,7 @@ static void handle_token(HttpRequest *req) {
         return;
     }
 
-    LOGF("oauth: issued access token\n");
+    LOGI("oauth", "issued access token");
     http_send_json(req->fd, 200,
                    "{\"access_token\":\"%s\",\"token_type\":\"Bearer\"}", token);
 }

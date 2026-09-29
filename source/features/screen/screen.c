@@ -9,7 +9,7 @@ Result screen_capture_jpeg(ViLayerStack stack, u8 *buf, size_t buf_size, u64 *ou
     u64 size = 0;
     Result rc = capsscCaptureJpegScreenShot(&size, buf, buf_size, stack, CAPTURE_TIMEOUT_NS);
     if (R_FAILED(rc)) {
-        LOGF("screen: capture failed rc=0x%x\n", rc);
+        LOGE("screen", "capture failed rc=0x%x", rc);
         return rc;
     }
     *out_size = size;

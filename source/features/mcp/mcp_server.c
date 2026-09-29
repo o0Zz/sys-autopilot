@@ -44,7 +44,7 @@ static int g_tool_count;
 
 void mcp_server_register_tool(const McpToolDef *def, McpToolHandler handler) {
     if (g_tool_count >= MCP_MAX_TOOLS) {
-        LOGF("mcp: tool table full, dropping %.64s\n", def->schema);
+        LOGW("mcp", "tool table full, dropping %.64s", def->schema);
         return;
     }
     g_tools[g_tool_count++] = (Tool){ def, handler };
@@ -418,7 +418,7 @@ static void handle_post(HttpRequest *req) {
 
     int params = json_obj_get(doc, 0, "params"); // may be -1
 
-    LOGF("mcp: %s\n", method);
+    LOGI("mcp", "%s", method);
 
     if (!has_id || strncmp(method, "notifications/", 14) == 0) {
         // Notification: accept and discard.

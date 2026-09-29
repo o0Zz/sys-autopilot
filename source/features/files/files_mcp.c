@@ -128,7 +128,7 @@ static void tool_upload_file(McpCall *call) {
 
     char msg[820];
     snprintf(msg, sizeof(msg), "wrote %zu bytes to %s", bytes, fspath + strlen(FILES_ROOT));
-    LOGF("mcp: %s\n", msg);
+    LOGI("files", "%s", msg);
     mcp_reply_text(call, msg);
 }
 
@@ -151,7 +151,7 @@ static void tool_move_file(McpCall *call) {
 
     char msg[820];
     snprintf(msg, sizeof(msg), "moved to %s", dst + strlen(FILES_ROOT));
-    LOGF("mcp: %s\n", msg);
+    LOGI("files", "%s", msg);
     mcp_reply_text(call, msg);
 }
 

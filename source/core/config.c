@@ -31,7 +31,8 @@ static const char *kDefaultConfig =
     "password =\n"
     "\n"
     "; Write diagnostics to log.txt next to this file (the sysmodule has no\n"
-    "; console output). Off by default; set to true when troubleshooting.\n"
+    "; console output): false, error, warn, info or debug. true means info.\n"
+    "; Off by default; set to info (or debug) when troubleshooting.\n"
     "log = false\n"
     "\n"
     "[power]\n"
@@ -56,6 +57,21 @@ static bool is_true(const char *val) {
            strcasecmp(val, "on") == 0;
 }
 
+static const char *const kLogLevelNames[] = {"debug", "info", "warn", "error", "off"};
+
+// `log = ...`: a level name, or a boolean (true = info). Anything else
+// leaves logging off.
+static LogLevel parse_log_level(const char *val) {
+    if (is_true(val))
+        return LOG_LEVEL_INFO;
+    if (strcasecmp(val, "warning") == 0)
+        return LOG_LEVEL_WARN;
+    for (int i = 0; i < LOG_LEVEL_OFF; i++)
+        if (strcasecmp(val, kLogLevelNames[i]) == 0)
+            return (LogLevel)i;
+    return LOG_LEVEL_OFF;
+}
+
 static void write_default_config(void) {
     mkdir("sdmc:/config", 0777);
     mkdir(CONFIG_DIR, 0777);
@@ -69,12 +85,13 @@ static void write_default_config(void) {
 void config_load(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->port = 4150;
+    cfg->log_level = LOG_LEVEL_OFF;
     cfg->keep_awake = true;
 
     FILE *f = fopen(CONFIG_PATH, "rb");
     if (!f) {
         write_default_config();
-        LOGF("config: wrote default config to %s\n", CONFIG_PATH);
+        LOGI("config", "wrote default config to %s", CONFIG_PATH);
         return;
     }
 
@@ -121,19 +138,19 @@ void config_load(Config *cfg) {
         } else if (strcasecmp(key, "hostname") == 0) {
             snprintf(cfg->hostname, sizeof(cfg->hostname), "%s", val);
         } else if (strcasecmp(key, "log") == 0) {
-            cfg->log = is_true(val);
+            cfg->log_level = parse_log_level(val);
         }
     }
     fclose(f);
 
     // Activate the file log sink now that we know the user's preference, so
-    // subsequent LOGF() calls (here and across the server) are captured.
-    log_set_enabled(cfg->log);
+    // subsequent LOG*() calls (here and across the server) are captured.
+    log_set_level(cfg->log_level);
 
-    LOGF("config: port=%d auth=%s hostname=%s log=%s keep_awake=%s\n", cfg->port,
+    LOGI("config", "port=%d auth=%s hostname=%s log=%s keep_awake=%s", cfg->port,
          config_auth_enabled(cfg) ? "enabled" : "disabled",
          cfg->hostname[0] != '\0' ? cfg->hostname : "(auto)",
-         cfg->log ? "on" : "off",
+         kLogLevelNames[cfg->log_level],
          cfg->keep_awake ? "on" : "off");
 }
 

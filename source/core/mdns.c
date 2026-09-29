@@ -119,7 +119,7 @@ bool mdns_config_init(MdnsConfig *cfg, const Config *app_cfg) {
     const uint8_t *o = (const uint8_t *)&s_addr; // o[0]=octet1 ... o[3]=octet4
     cfg->ipv4 = ((uint32_t)o[0] << 24) | ((uint32_t)o[1] << 16) |
                 ((uint32_t)o[2] << 8) | (uint32_t)o[3];
-    LOGF("mdns: config ready ip=%u.%u.%u.%u host=%s\n",
+    LOGD("mdns", "config ready ip=%u.%u.%u.%u host=%s",
          o[0], o[1], o[2], o[3], cfg->host);
     return true;
 }
@@ -466,7 +466,7 @@ static int group_membership(int fd, int op) {
 int mdns_open(const MdnsConfig *cfg) {
     int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (fd < 0) {
-        LOGF("mdns: socket() failed (errno=%d)\n", errno);
+        LOGE("mdns", "socket() failed (errno=%d)", errno);
         return -1;
     }
 
@@ -481,19 +481,19 @@ int mdns_open(const MdnsConfig *cfg) {
     bindaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     bindaddr.sin_port = htons(MDNS_PORT);
     if (bind(fd, (struct sockaddr *)&bindaddr, sizeof(bindaddr)) != 0) {
-        LOGF("mdns: bind :%d failed (errno=%d)\n", MDNS_PORT, errno);
+        LOGE("mdns", "bind :%d failed (errno=%d)", MDNS_PORT, errno);
         close(fd);
         return -1;
     }
 
     if (group_membership(fd, IP_ADD_MEMBERSHIP) != 0)
-        LOGF("mdns: join group failed (errno=%d); continuing\n", errno);
+        LOGW("mdns", "join group failed (errno=%d); continuing", errno);
 
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags >= 0)
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-    LOGF("mdns: advertising %s (service " MDNS_SERVICE_TYPE ") on port %u\n",
+    LOGI("mdns", "advertising %s (service " MDNS_SERVICE_TYPE ") on port %u",
          cfg->host, (unsigned)cfg->port);
     return fd;
 }
@@ -523,9 +523,9 @@ void mdns_handle_readable(int fd, const MdnsConfig *cfg) {
     // it set the unicast-response (QU) bit (e.g. dig, one-shot resolvers).
     struct sockaddr_in dst = unicast ? from : mdns_group();
     if (sendto(fd, outbuf, rlen, 0, (struct sockaddr *)&dst, sizeof(dst)) < 0)
-        LOGF("mdns: sendto failed (errno=%d)\n", errno);
+        LOGE("mdns", "sendto failed (errno=%d)", errno);
     else
-        LOGF("mdns: replied %zu bytes to %s:%u (%s)\n", rlen,
+        LOGD("mdns", "replied %zu bytes to %s:%u (%s)", rlen,
              inet_ntoa(dst.sin_addr), ntohs(dst.sin_port),
              unicast ? "unicast" : "multicast");
 }
@@ -539,10 +539,10 @@ bool mdns_announce(int fd, const MdnsConfig *cfg) {
     ssize_t sent = sendto(fd, outbuf, len, 0,
                           (struct sockaddr *)&grp, sizeof(grp));
     if (sent < 0) {
-        LOGF("mdns: announce failed (errno=%d)\n", errno);
+        LOGE("mdns", "announce failed (errno=%d)", errno);
         return false;
     }
-    LOGF("mdns: announced %zd bytes as %s\n", sent, cfg->host);
+    LOGD("mdns", "announced %zd bytes as %s", sent, cfg->host);
     return true;
 }
 

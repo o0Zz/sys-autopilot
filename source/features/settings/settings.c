@@ -31,10 +31,10 @@ void settings_init(void) {
     g_lbl_ok    = R_SUCCEEDED(lblInitialize());
     g_audctl_ok = R_SUCCEEDED(audctlInitialize());
     g_psm_ok    = R_SUCCEEDED(psmInitialize());
-    if (!g_setsys_ok) LOGF("settings: set:sys init failed\n");
-    if (!g_lbl_ok)    LOGF("settings: lbl init failed\n");
-    if (!g_audctl_ok) LOGF("settings: audctl init failed\n");
-    if (!g_psm_ok)    LOGF("settings: psm init failed\n");
+    if (!g_setsys_ok) LOGE("settings", "set:sys init failed");
+    if (!g_lbl_ok)    LOGE("settings", "lbl init failed");
+    if (!g_audctl_ok) LOGE("settings", "audctl init failed");
+    if (!g_psm_ok)    LOGE("settings", "psm init failed");
 }
 
 void settings_exit(void) {
@@ -223,7 +223,7 @@ bool settings_set_datetime(const DateTime *dt) {
     // time follows it. Verified on hardware fixing a badly-skewed clock.
     Result rc = timeSetCurrentTime(TimeType_NetworkSystemClock, posix);
     if (R_FAILED(rc)) {
-        LOGF("settings: SetCurrentTime(Network) rc=0x%x\n", rc);
+        LOGE("settings", "SetCurrentTime(Network) rc=0x%x", rc);
         return false;
     }
     return true;

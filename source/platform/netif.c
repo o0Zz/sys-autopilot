@@ -21,10 +21,10 @@ bool netif_init(void) {
     Result rc = nifmInitialize(NifmServiceType_Admin);
     if (R_FAILED(rc)) {
         // Fall back to User if Admin is somehow unavailable (read-only still ok).
-        LOGF("netif: nifm:a init failed rc=0x%x, trying nifm:u\n", rc);
+        LOGW("netif", "nifm:a init failed rc=0x%x, trying nifm:u", rc);
         rc = nifmInitialize(NifmServiceType_User);
         if (R_FAILED(rc)) {
-            LOGF("netif: nifmInitialize failed rc=0x%x\n", rc);
+            LOGE("netif", "nifmInitialize failed rc=0x%x", rc);
             return false;
         }
     }

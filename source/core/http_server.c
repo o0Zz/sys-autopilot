@@ -57,7 +57,7 @@ static int g_sleep_hook_count;
 
 bool http_server_on_sleep(HttpSleepHook hook) {
     if (g_sleep_hook_count >= HTTP_MAX_SLEEP_HOOKS) {
-        LOGF("server: sleep hook table full\n");
+        LOGW("server", "sleep hook table full");
         return false;
     }
     g_sleep_hooks[g_sleep_hook_count++] = hook;
@@ -193,7 +193,7 @@ void http_server_run(const Config *cfg) {
     static MdnsConfig mdns_cfg; // off the stack; lives for the loop
     bool mdns_ready = mdns_config_init(&mdns_cfg, cfg);
     if (!mdns_ready)
-        LOGF("server: mDNS: local IP not yet known; will retry\n");
+        LOGW("mdns", "local IP not yet known; will retry");
 
     // Pending unsolicited announcements. Set when the mDNS socket (re)opens
     // and decremented only when a send actually succeeds, so we keep retrying
@@ -225,7 +225,7 @@ void http_server_run(const Config *cfg) {
             // no fsp-srv (or bsd) IPC may occur between this point and the wake
             // notification, or the console hangs on wake. The log sink writes
             // to the SD card, so it must stay silent across the whole window.
-            LOGF("server: power: sleeping, releasing sockets\n");
+            LOGI("power", "sleeping, releasing sockets");
             log_set_suspended(true);
             if (listen_fd >= 0) {
                 close(listen_fd);
@@ -247,7 +247,7 @@ void http_server_run(const Config *cfg) {
             suspended = false;
             // Safe to touch the SD card again now that we are awake.
             log_set_suspended(false);
-            LOGF("server: power: awake\n");
+            LOGI("power", "awake");
             // Wake lands back on the lock screen and its short idle policy
             // starts running immediately: ping on the very next iteration.
             keepawake_next = 0;
@@ -288,7 +288,7 @@ void http_server_run(const Config *cfg) {
         if (++netcheck_ticks >= 20) { // ~2s at 100ms/iteration
             netcheck_ticks = 0;
             if (netif_ipv4_changed()) {
-                LOGF("server: IP changed; rebuilding sockets\n");
+                LOGW("server", "IP changed; rebuilding sockets");
                 if (listen_fd >= 0) {
                     close(listen_fd);
                     listen_fd = -1;
@@ -304,12 +304,12 @@ void http_server_run(const Config *cfg) {
         if (listen_fd < 0) {
             listen_fd = create_listener(cfg->port);
             if (listen_fd < 0) {
-                LOGF("server: bind/listen on port %d failed (errno=%d), retrying\n",
+                LOGE("server", "bind/listen on port %d failed (errno=%d), retrying",
                      cfg->port, errno);
                 svcSleepThread(RETRY_WAIT_NS);
                 continue;
             }
-            LOGF("server: listening on port %d\n", cfg->port);
+            LOGI("server", "listening on port %d", cfg->port);
         }
 
         // (Re)establish mDNS advertising. The listener binds to INADDR_ANY and
@@ -322,7 +322,7 @@ void http_server_run(const Config *cfg) {
             if (mdns_ready) {
                 mdns_fd = mdns_open(&mdns_cfg);
                 if (mdns_fd >= 0) {
-                    LOGF("server: mDNS up as %s\n", mdns_cfg.host);
+                    LOGI("server", "mDNS up as %s", mdns_cfg.host);
                     mdns_announce_left = 3; // sent once routing is up (below)
                 }
             }
@@ -355,7 +355,7 @@ void http_server_run(const Config *cfg) {
 
         if (pr < 0) {
             // bsd service hiccup; rebuild both sockets.
-            LOGF("server: poll failed (errno=%d), rebuilding listener\n", errno);
+            LOGE("server", "poll failed (errno=%d), rebuilding listener", errno);
             close(listen_fd);
             listen_fd = -1;
             if (mdns_fd >= 0) {
@@ -379,7 +379,7 @@ void http_server_run(const Config *cfg) {
         if (client < 0) {
             // EAGAIN: spurious wakeup on the non-blocking listener.
             if (errno != EAGAIN && errno != EWOULDBLOCK)
-                LOGF("server: accept failed (errno=%d)\n", errno);
+                LOGE("server", "accept failed (errno=%d)", errno);
             continue;
         }
 
@@ -395,10 +395,10 @@ void http_server_run(const Config *cfg) {
         // confirmation before the console goes away.
         PowerAction act = power_take_scheduled();
         if (act != PowerAction_None) {
-            LOGF("server: executing power action %d\n", act);
+            LOGI("server", "executing power action %d", act);
             svcSleepThread(200000000LL); // 200ms: let the response flush
             if (!power_perform(act))
-                LOGF("server: power action failed\n");
+                LOGE("server", "power action failed");
             // For sleep, the PSC ReadySleep event arrives on a subsequent
             // iteration and quiesces sockets/HDLS as usual.
         }

@@ -164,9 +164,9 @@ bool install_init(void) {
     g_ncm_ok = R_SUCCEEDED(ncmInitialize());
     g_ns_ok  = R_SUCCEEDED(nsext_init());
     g_es_ok  = R_SUCCEEDED(esext_init());
-    if (!g_ncm_ok) LOGF("install: ncm init failed\n");
-    if (!g_ns_ok)  LOGF("install: ns init failed\n");
-    if (!g_es_ok)  LOGF("install: es init failed\n");
+    if (!g_ncm_ok) LOGE("install", "ncm init failed");
+    if (!g_ns_ok)  LOGE("install", "ns init failed");
+    if (!g_es_ok)  LOGE("install", "es init failed");
     return g_ncm_ok && g_ns_ok;
 }
 
@@ -204,7 +204,7 @@ static void fail(InstallResult *r, int status, const char *fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(r->message, sizeof(r->message), fmt, ap);
     va_end(ap);
-    LOGF("install: ERROR %s\n", r->message);
+    LOGE("install", "%s", r->message);
 }
 
 // Every buffer the installer needs, provided by the caller in one piece for
@@ -250,9 +250,9 @@ static Result write_content(NcmContentStorage *cs, const NcmContentId *cid,
     if (R_FAILED(rc)) return rc;
     ncmContentStorageDeletePlaceHolder(cs, &phid); // ignore
     rc = ncmContentStorageCreatePlaceHolder(cs, cid, &phid, (s64)size);
-    if (R_FAILED(rc)) { LOGF("install: CreatePlaceHolder rc=0x%x\n", rc); return rc; }
+    if (R_FAILED(rc)) { LOGE("install", "CreatePlaceHolder rc=0x%x", rc); return rc; }
 
-    Sha256Stream sha;
+Sha256Stream sha;
     sha256_stream_init(&sha);
 
     u64 written = 0;
@@ -278,7 +278,7 @@ static Result write_content(NcmContentStorage *cs, const NcmContentId *cid,
         u8 digest[32];
         sha256_stream_final(&sha, digest);
         if (memcmp(digest, cid->c, 16) != 0) {
-            LOGF("install: hash mismatch for content (size=%llu)\n",
+            LOGE("install", "hash mismatch for content (size=%llu)",
                  (unsigned long long)size);
             rc = MAKERESULT(Module_Libnx, LibnxError_BadInput);
             goto done;
@@ -287,7 +287,7 @@ static Result write_content(NcmContentStorage *cs, const NcmContentId *cid,
 
     ncmContentStorageDelete(cs, cid); // replace any stale copy
     rc = ncmContentStorageRegister(cs, cid, &phid);
-    if (R_FAILED(rc)) LOGF("install: Register rc=0x%x\n", rc);
+    if (R_FAILED(rc)) LOGE("install", "Register rc=0x%x", rc);
 
 done:
     ncmContentStorageDeletePlaceHolder(cs, &phid);
@@ -307,7 +307,7 @@ static bool read_cnmt(NcmContentStorage *cs, const NcmContentId *meta_cid,
     Result rc = ncmContentStorageGetPath(cs, nca_path, sizeof(nca_path), meta_cid);
     if (R_FAILED(rc)) {
         *err = "get meta nca path failed";
-        LOGF("install: ncmContentStorageGetPath rc=0x%x\n", rc);
+        LOGE("install", "ncmContentStorageGetPath rc=0x%x", rc);
         return false;
     }
 
@@ -316,7 +316,7 @@ static bool read_cnmt(NcmContentStorage *cs, const NcmContentId *meta_cid,
                                 nca_path, FsContentAttributes_All);
     if (R_FAILED(rc)) {
         *err = "mount cnmt nca failed";
-        LOGF("install: fsOpenFileSystemWithId(cnmt) rc=0x%x path=%s\n", rc, nca_path);
+        LOGE("install", "fsOpenFileSystemWithId(cnmt) rc=0x%x path=%s", rc, nca_path);
         return false;
     }
 
@@ -549,7 +549,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
         if (g_es_ok && tik_size > 0) {
             Result rc = esext_import_ticket(tik_buf, tik_size,
                                             cert_size ? cert_buf : NULL, cert_size);
-            if (R_FAILED(rc)) LOGF("install: import ticket rc=0x%x (continuing)\n", rc);
+            if (R_FAILED(rc)) LOGW("install", "import ticket rc=0x%x (continuing)", rc);
         }
 
         // Build the install-time content-meta blob:
@@ -630,7 +630,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     out->version = pkg.version;
     snprintf(out->message, sizeof(out->message),
              "installed %016llx v%u", (unsigned long long)pkg.id, pkg.version);
-    LOGF("install: %s\n", out->message);
+    LOGI("install", "%s", out->message);
     return true;
 }
 

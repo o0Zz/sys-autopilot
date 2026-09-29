@@ -123,7 +123,7 @@ void __appInit(void)
     // unconditionally because config.ini is only read after __appInit; whether
     // we actually ping is decided by the server loop.
     if (!power_keepawake_init())
-        LOGF("power: idle:sys unavailable; auto-sleep cannot be held off\n");
+        LOGW("power", "idle:sys unavailable; auto-sleep cannot be held off");
 
     // Gather device facts (model/firmware/Atmosphère) for the mDNS TXT record
     // now, while the sm session is still open: the underlying set:sys/spl
@@ -135,7 +135,7 @@ void __appInit(void)
     // (gethostid() only ever returns loopback in a sysmodule). Must be opened
     // while sm is up; the session is held for the process lifetime.
     if (!netif_init())
-        LOGF("netif: nifm init failed; mDNS A records unavailable\n");
+        LOGE("netif", "nifm init failed; mDNS A records unavailable");
 
     // The services each feature needs (settings, installer, process
     // control). Opened while sm is up; all best-effort, a missing service just
