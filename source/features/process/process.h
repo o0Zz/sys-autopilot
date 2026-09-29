@@ -44,8 +44,13 @@ typedef struct {
 // out[0..max) and returns the count, or -1 with the Horizon result in *out_rc.
 int process_list(ProcessEntry *out, int max, uint32_t *out_rc);
 
+// *out_rc from process_start() when the program is already running.
+#define PROCESS_RC_ALREADY_RUNNING 0xffffffffu
+
 // Launches the program. *out_pid receives the new process id. On failure the
 // Horizon result is stored in *out_rc (0 when the failure was not a Result).
+// A program that is already running is refused: false, *out_rc is
+// PROCESS_RC_ALREADY_RUNNING and *out_pid its pid.
 bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc);
 
 // Terminates the program. Terminating one that is not running is a failure,

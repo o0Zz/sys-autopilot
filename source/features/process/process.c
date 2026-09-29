@@ -189,6 +189,17 @@ bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
     if (!g_initialized)
         return false;
 
+    // pm launches a second instance of a program that is already running.
+    // With nx-ovlloader that hung the launch and then took the console down
+    // (fatal), so refuse before touching the boost or hid:dbg.
+    ProcessStatus st;
+    process_status(program_id, &st);
+    if (st.running) {
+        *out_pid = st.pid;
+        *out_rc = PROCESS_RC_ALREADY_RUNNING;
+        return false;
+    }
+
     // storageID None is what Atmosphere's boot2 uses to launch the sysmodules
     // under /atmosphere/contents; ldr resolves the program from the SD card.
     const NcmProgramLocation loc = {
@@ -295,8 +306,11 @@ void process_status(uint64_t program_id, ProcessStatus *out) {
 
 bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
     *out_rc = 0;
-    if (g_fake_running && g_fake_program_id == program_id)
-        return false; // already running
+    if (g_fake_running && g_fake_program_id == program_id) {
+        *out_pid = g_fake_pid;
+        *out_rc = PROCESS_RC_ALREADY_RUNNING;
+        return false;
+    }
     g_fake_running = true;
     g_fake_program_id = program_id;
     g_fake_pid = 0x42;

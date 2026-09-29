@@ -108,7 +108,12 @@ static void post_start(HttpRequest *req) {
     uint64_t pid = 0;
     uint32_t rc = 0;
     if (!process_start(tid, &pid, &rc)) {
-        send_process_error(req, "launch failed", rc);
+        if (rc == PROCESS_RC_ALREADY_RUNNING)
+            http_send_json(req->fd, 409,
+                           "{\"ok\":false,\"error\":\"already running\",\"pid\":\"%llu\"}",
+                           (unsigned long long)pid);
+        else
+            send_process_error(req, "launch failed", rc);
         return;
     }
     http_send_json(req->fd, 200,

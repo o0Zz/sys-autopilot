@@ -87,8 +87,12 @@ static void tool_process_start(McpCall *call) {
     uint32_t rc = 0;
     char msg[160];
     if (!process_start(tid, &pid, &rc)) {
-        snprintf(msg, sizeof(msg), "failed to launch %016llx (rc 0x%08x)",
-                 (unsigned long long)tid, rc);
+        if (rc == PROCESS_RC_ALREADY_RUNNING)
+            snprintf(msg, sizeof(msg), "%016llx is already running (pid %llu)",
+                     (unsigned long long)tid, (unsigned long long)pid);
+        else
+            snprintf(msg, sizeof(msg), "failed to launch %016llx (rc 0x%08x)",
+                     (unsigned long long)tid, rc);
         mcp_reply_error(call, msg);
         return;
     }

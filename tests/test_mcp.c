@@ -489,6 +489,7 @@ static void test_process_tools(void) {
              "{\"name\":\"process_start\",\"arguments\":{\"titleId\":\"%s\"}}}", TID);
     r = do_rpc(body);
     assert(strstr(r, "\"isError\":true"));
+    assert(strstr(r, "is already running (pid"));
 
     // A 0x prefix is accepted, and restart works from the running state.
     snprintf(body, sizeof(body),
