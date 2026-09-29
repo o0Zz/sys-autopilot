@@ -12,6 +12,35 @@ Typical agent loop:
 2. `screenshot` + `tap_buttons` MCP tools — navigate to hbmenu and launch it
 3. `screenshot` / `read_file` — observe the app and its log files, iterate
 
+## What this fork adds
+
+This is a fork of [TooTallNate/sys-autopilot](https://github.com/TooTallNate/sys-autopilot).
+On top of upstream it adds:
+
+- **Process control** — start, stop, restart and query any program by title id
+  (`/process`, `process_*` MCP tools). Iterate on a sysmodule without
+  rebooting: stop it, upload the new `exefs.nsp`, start it again. See
+  [Process control](#process-control).
+- **Built-in file explorer** — a browser file manager at `/explorer` (and `/`):
+  browse, edit, upload, download, rename, delete, live log tail, reboot
+  button, Ctrl+S to save. See [File explorer](#file-explorer).
+- **File move / rename** — `/files/move` endpoint and `move_file` MCP tool.
+- **Touch gestures** — `/input/touch` and `/input/swipe`, injected on the
+  panel independently of the virtual controller. See [Touch screen](#touch-screen).
+- **Keep awake** — `[power] keep_awake` holds off auto-sleep so the WLAN stays
+  up and the server keeps answering.
+- **Smaller memory footprint** — the inner heap drops from 4 MB to 1 MB. Large
+  transient buffers (install, hashing, JPEG) come from one request-scoped
+  arena instead of per-feature statics, and the install chunk drops from
+  1 MiB to 128 KiB. The code shrinks by ~65 KB.
+- **More reliable networking** — smaller per-socket buffers with a larger
+  pool: ten sockets instead of two, for roughly the same memory. Browsers and
+  concurrent REST clients no longer get random connection resets, and idle
+  connections close without leaving the server in `TIME_WAIT`.
+- **Modular build** — each feature lives in `source/features/<name>/` and can
+  be left out: `make FEATURES="explorer power"` builds only those optional
+  features, and `make MCP=0` drops MCP and OAuth. See [Building](#building).
+
 ## Requirements
 
 - Switch running [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere) CFW
@@ -37,6 +66,14 @@ make clean && make MCP=0
 This drops `/mcp` and the OAuth browser login that exists for MCP clients
 (about 100 KB of code and 120 KB of RAM). Bearer auth then accepts only the
 `token` from `config.ini`; Basic auth is unchanged.
+
+The optional features are chosen with `FEATURES` (default:
+`explorer install network power process titles`). `status`, `screen`,
+`input`, `files` and `settings` are always built:
+
+```sh
+make clean && make FEATURES="explorer power"
+```
 
 ## Installing
 
