@@ -469,6 +469,13 @@ static void test_process_tools(void) {
     assert(strstr(r, "\"isError\":false"));
     assert(strstr(r, "launched 690000000000000d"));
 
+    // The list shows it next to a process pm does not track.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":38,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"process_list\",\"arguments\":{}}}");
+    assert(strstr(r, "\"isError\":false"));
+    assert(strstr(r, "690000000000000d"));
+    assert(strstr(r, "(no title id)"));
+
     // Now visible as running.
     snprintf(body, sizeof(body),
              "{\"jsonrpc\":\"2.0\",\"id\":32,\"method\":\"tools/call\",\"params\":"
