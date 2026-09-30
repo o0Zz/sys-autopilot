@@ -62,7 +62,7 @@ The image has no host `cc`; install `gcc libc6-dev` with apt before running
 6. Add a test to `tests/run.sh`.
 
 Route and tool tables are fixed size: `HTTP_MAX_ROUTES` (64) in
-`core/http_server.h` and `MCP_MAX_TOOLS` in `features/mcp/mcp_server.c`.
+`core/http_server.h` and `MCP_MAX_TOOLS` (48) in `features/mcp/mcp_server.h`.
 
 ## Rules
 

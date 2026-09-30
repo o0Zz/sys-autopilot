@@ -65,7 +65,7 @@ endif
 
 # The sysmodule has no stdout, so LOGI() and friends are routed to a log file on the SD
 # card. Compiled in unconditionally but gated at runtime by the `log` key in
-# config.ini (see log.{c,h}); disabled by default, so this is free when off.
+# config.ini (see log.{c,h}), so this is free with `log = off`.
 DEFINES	+=	-DLOG_TO_FILE
 
 #---------------------------------------------------------------------------------

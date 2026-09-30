@@ -56,8 +56,8 @@ token =
 ; Basic auth. Also enables the OAuth login for MCP clients.
 username =
 password =
-; Write sdmc:/config/sys-autopilot/log.txt: false, error, warn, info, debug.
-log = false
+; Write sdmc:/config/sys-autopilot/log.txt: off, error, warn, info, debug.
+log = info
 
 [power]
 ; Hold off auto-sleep (sleep turns the WLAN off).
@@ -135,6 +135,8 @@ curl -X POST http://<ip>:4150/process/start -d '{"titleId":"690000000000000d"}'
 A program does not need `flags/boot2.flag` to be started this way. Leave the
 flag off while developing: a build that crashes at boot then cannot take the
 console down, and you can still upload the fix. `stop` is a hard kill.
+`start` refuses a program that is already running and answers 409 with its
+pid; use `restart` for that.
 
 ## REST API
 

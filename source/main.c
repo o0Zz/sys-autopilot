@@ -1,5 +1,6 @@
 #include <switch.h>
 
+#include "core/app.h"
 #include "core/config.h"
 #include "core/http_server.h"
 #include "core/log.h"
@@ -168,6 +169,14 @@ int main(int argc, char* argv[])
 {
     Config cfg;
     config_load(&cfg);
+
+    // Logged here, not in __appInit: the file sink stays off until config_load
+    // has read the `log` level.
+    const DeviceInfo *dev = device_info_get();
+    LOGI("main", "sys-autopilot %s started (build %s %s) - https://github.com/o0Zz/sys-autopilot",
+         app_version(), __DATE__, __TIME__);
+    LOGI("main", "model=%s firmware=%s atmosphere=%s", dev->model, dev->firmware,
+         dev->atmosphere[0] != '\0' ? dev->atmosphere : "n/a");
 
     // Every feature plugs its routes and MCP tools into the servers.
     features_register(&cfg);
