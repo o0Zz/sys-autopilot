@@ -66,7 +66,12 @@ Result input_touch_swipe(int from_x, int from_y, int to_x, int to_y,
 char stub_typed[512];
 int stub_key_ms;
 
-Result input_type_text(const char *text, int key_ms) {
+int stub_keyboard_layout = 1; // English (US)
+
+int input_keyboard_layout(void) { return stub_keyboard_layout; }
+
+Result input_type_text(int layout, const char *text, int key_ms) {
+    (void)layout;
     snprintf(stub_typed, sizeof(stub_typed), "%s", text);
     stub_key_ms = key_ms;
     return 0;

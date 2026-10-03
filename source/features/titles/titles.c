@@ -35,12 +35,21 @@ static void resolve_name(u64 app_id, char *name, size_t namesz,
     if (R_FAILED(rc) || actual < sizeof(ctrl->nacp))
         return;
     NacpLanguageEntry *le = NULL;
+    if (R_FAILED(nsGetApplicationDesiredLanguage(&ctrl->nacp, &le)) || !le)
+        if (R_FAILED(nacpGetLanguageEntry(&ctrl->nacp, &le)) || !le)
+            return;
     // The NACP name field is fixed-size (0x200) and not guaranteed NUL-
     // terminated within our smaller buffer, so bound the copy explicitly.
-    if (R_SUCCEEDED(nsGetApplicationDesiredLanguage(&ctrl->nacp, &le)) && le)
-        snprintf(name, namesz, "%.*s", (int)namesz - 1, le->name);
-    else if (R_SUCCEEDED(nacpGetLanguageEntry(&ctrl->nacp, &le)) && le)
-        snprintf(name, namesz, "%.*s", (int)namesz - 1, le->name);
+    // Copied by hand rather than with "%.*s", which the console's newlib
+    // turns into Latin-1 for UTF-8 names; cut at a character boundary.
+    size_t n = strnlen(le->name, sizeof(le->name));
+    if (n > namesz - 1) {
+        n = namesz - 1;
+        while (n > 0 && ((unsigned char)le->name[n] & 0xC0) == 0x80)
+            n--;
+    }
+    memcpy(name, le->name, n);
+    name[n] = '\0';
 }
 
 // The caller's work buffer: one title's control data (NACP + icon) and one

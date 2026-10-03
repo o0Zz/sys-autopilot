@@ -78,7 +78,10 @@ typedef struct {
 } ScreenWaitResult;
 
 #define SCREEN_WAIT_DEFAULT_TIMEOUT_MS 10000
+// Defaults for what counts as a change. Stable is looser: highlighted menu
+// items pulse, which alone moves up to ~1.5% of the screen frame to frame.
 #define SCREEN_WAIT_DEFAULT_THRESHOLD  1.0
+#define SCREEN_WAIT_STABLE_THRESHOLD   2.0
 #define SCREEN_WAIT_DEFAULT_STABLE_MS  1000
 
 // Polls the screen (as 1/8 luma thumbnails, about 5 times a second) until the

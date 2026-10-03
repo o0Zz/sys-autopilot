@@ -85,7 +85,7 @@
           },
           "thresholdPercent": {
             "type": "number",
-            "description": "Share of the screen that must differ to count as a change. Default 1 (a blinking cursor or a clock is usually less)."
+            "description": "Share of the screen that must differ to count as a change. Default 1 for change, 2 for stable (a pulsing menu highlight moves up to about 1.5%; a blinking cursor or a clock is less)."
           },
           "stableMs": {
             "type": "integer",

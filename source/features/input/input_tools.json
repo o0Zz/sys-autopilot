@@ -284,13 +284,13 @@
     },
     {
       "name": "type_text",
-      "description": "Type text on a virtual USB keyboard (US layout), e.g. into the system software keyboard once a text field has opened it, instead of picking letters with the D-pad. Supports printable ASCII plus \\n (Enter), \\t (Tab) and \\b (Backspace); anything else is rejected before typing starts. Software that ignores USB keyboards does not see it.",
+      "description": "Type text on a virtual USB keyboard, e.g. into the system software keyboard once a text field has opened it, instead of picking letters with the D-pad. Keys are chosen for the console's own keyboard layout (it follows the system language); English (US), English (UK) and French are supported, including accented letters those layouts can type (French: é è à ç ù ê ë...). \\n is Enter, \\t Tab, \\b Backspace. Text the layout cannot type is rejected before anything is typed. Software that ignores USB keyboards does not see it.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "text": {
             "type": "string",
-            "description": "Text to type, at most 256 characters."
+            "description": "Text to type (UTF-8), at most 256 bytes."
           },
           "keyMs": {
             "type": "integer",

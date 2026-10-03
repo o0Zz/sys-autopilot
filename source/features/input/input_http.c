@@ -96,14 +96,17 @@ static void post_text(HttpRequest *req) {
     char text[KEYBOARD_TEXT_MAX + 1];
     int t = json_obj_get(doc, 0, "text");
     if (t < 0 || !json_get_string(doc, t, text, sizeof(text)) || text[0] == '\0') {
-        http_send_error(req->fd, 400, "missing 'text' (non-empty string, at most 256 characters)");
+        http_send_error(req->fd, 400, "missing 'text' (non-empty string, at most 256 bytes)");
         return;
     }
-    if (keyboard_find_unsupported(text) >= 0) {
-        http_send_error(req->fd, 400, "'text' has characters a US keyboard cannot type");
+    int layout = input_keyboard_layout();
+    char msg[160];
+    if (!keyboard_check_text(layout, text, msg, sizeof(msg))) {
+        http_send_error(req->fd, 400, msg);
         return;
     }
-    send_input_result(req, input_type_text(text, json_obj_int(doc, 0, "keyMs", INPUT_DEFAULT_KEY_MS)));
+    send_input_result(req, input_type_text(layout, text,
+                                           json_obj_int(doc, 0, "keyMs", INPUT_DEFAULT_KEY_MS)));
 }
 
 static void post_clear(HttpRequest *req)  { send_input_result(req, input_clear()); }

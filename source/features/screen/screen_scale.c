@@ -117,41 +117,41 @@ bool screen_wait(HttpRequest *req, const ScreenWait *w, ScreenWaitResult *res,
         return false;
     }
 
-    bool ok = screen_capture_thumb(req, w->stack, jpeg, ref, err, errsz);
+    // The OS refuses captures for a moment during some transitions (an
+    // applet starting, the software keyboard opening): exactly when a wait
+    // runs. A failed capture is skipped; the wait fails only when none
+    // succeeds before the timeout.
+    bool have_ref = false;
     uint64_t start = http_server_now_ms(), stable_since = start;
-    while (ok) {
+    for (;;) {
+        bool got = screen_capture_thumb(req, w->stack, jpeg, have_ref ? cur : ref, err, errsz);
         uint64_t now = http_server_now_ms();
         res->elapsed_ms = (int)(now - start);
-        if (res->elapsed_ms >= timeout)
+        if (got && !have_ref) {
+            have_ref = true;
+            stable_since = now;
+        } else if (got) {
+            res->diff_pct = screen_thumb_diff(ref, cur);
+            bool changed = res->diff_pct >= w->threshold_pct;
+            if (w->mode == SCREEN_WAIT_CHANGE) {
+                res->met = changed;
+            } else {
+                // Stable: compare each frame with the one before it.
+                if (changed)
+                    stable_since = now;
+                else
+                    res->met = (int)(now - stable_since) >= w->stable_ms;
+                ScreenThumb *t = ref;
+                ref = cur;
+                cur = t;
+            }
+        }
+        if (res->met || res->elapsed_ms >= timeout)
             break;
         int left = timeout - res->elapsed_ms;
         if (!http_server_wait_ms(left < SCREEN_WAIT_POLL_MS ? left : SCREEN_WAIT_POLL_MS))
             break;
-        ok = screen_capture_thumb(req, w->stack, jpeg, cur, err, errsz);
-        if (!ok)
-            break;
-        now = http_server_now_ms();
-        res->elapsed_ms = (int)(now - start);
-        res->diff_pct = screen_thumb_diff(ref, cur);
-        bool changed = res->diff_pct >= w->threshold_pct;
-        if (w->mode == SCREEN_WAIT_CHANGE) {
-            if (changed) {
-                res->met = true;
-                break;
-            }
-        } else {
-            // Stable: compare each frame with the one before it.
-            if (changed)
-                stable_since = now;
-            else if ((int)(now - stable_since) >= w->stable_ms) {
-                res->met = true;
-                break;
-            }
-            ScreenThumb *t = ref;
-            ref = cur;
-            cur = t;
-        }
     }
     request_rewind(req, mark);
-    return ok;
+    return have_ref;
 }

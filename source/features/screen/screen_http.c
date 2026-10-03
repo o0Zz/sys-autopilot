@@ -106,9 +106,10 @@ static void get_wait_screen(HttpRequest *req) {
     };
     char val[32];
     if (http_query_get(req, "until", val, sizeof(val))) {
-        if (strcmp(val, "stable") == 0)
+        if (strcmp(val, "stable") == 0) {
             w.mode = SCREEN_WAIT_STABLE;
-        else if (strcmp(val, "change") != 0) {
+            w.threshold_pct = SCREEN_WAIT_STABLE_THRESHOLD;
+        } else if (strcmp(val, "change") != 0) {
             http_send_error(req->fd, 400, "invalid 'until' (change or stable)");
             return;
         }

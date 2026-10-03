@@ -319,37 +319,73 @@ Result input_touch_swipe(int from_x, int from_y, int to_x, int to_y,
 //
 // Like the touch panel, the keyboard goes through hiddbg's autopilot: the
 // state we set replaces the USB keyboard's in hid's sampler, which is what
-// the software keyboard reads. Each character is a press then a release, so
-// a repeated letter registers twice, and the override is always unset again
-// so a real keyboard works afterwards.
+// the software keyboard reads. The override is always unset again so a real
+// keyboard works afterwards.
+//
+// The console ignores a key going down again until some other key has (seen
+// on firmware 21: six presses of the same letter type it once, however long
+// the gaps), so a no-op key is tapped before every repeat, and before the
+// first key in case the previous call ended on the same one.
 
-static void key_state(HiddbgKeyboardAutoPilotState *st, uint8_t usage, bool shift) {
-    memset(st, 0, sizeof(*st));
-    if (shift) {
-        st->modifiers = HidKeyboardModifier_Shift;
-        st->keys[KEY_USAGE_LEFT_SHIFT / 64] |= 1ULL << (KEY_USAGE_LEFT_SHIFT % 64);
-    }
-    if (usage)
-        st->keys[usage / 64] |= 1ULL << (usage % 64);
+static_assert((int)KEYBOARD_LAYOUT_ENGLISH_US == (int)SetKeyboardLayout_EnglishUs, "layout drift");
+static_assert((int)KEYBOARD_LAYOUT_ENGLISH_UK == (int)SetKeyboardLayout_EnglishUk, "layout drift");
+static_assert((int)KEYBOARD_LAYOUT_FRENCH == (int)SetKeyboardLayout_French, "layout drift");
+static_assert((int)KEYBOARD_LAYOUT_CHINESE_TRADITIONAL == (int)SetKeyboardLayout_ChineseTraditional,
+              "layout drift");
+static_assert(KEY_USAGE_NOOP == HidKeyboardKey_F24, "key drift");
+static_assert(KEY_USAGE_LEFT_SHIFT == HidKeyboardKey_LeftShift, "key drift");
+static_assert(KEY_USAGE_RIGHT_ALT == HidKeyboardKey_RightAlt, "key drift");
+
+int input_keyboard_layout(void) {
+    SetKeyboardLayout layout;
+    // set:sys is held open by the settings feature (settings_init).
+    if (R_FAILED(setsysGetKeyboardLayout(&layout)))
+        return -1;
+    return (int)layout;
 }
 
-Result input_type_text(const char *text, int key_ms) {
+static void set_key(HiddbgKeyboardAutoPilotState *st, uint8_t usage) {
+    st->keys[usage / 64] |= 1ULL << (usage % 64);
+}
+
+static Result key_tap(uint8_t usage, uint8_t mods, int key_ms) {
+    HiddbgKeyboardAutoPilotState st;
+    memset(&st, 0, sizeof(st));
+    if (mods & KEY_MOD_SHIFT) {
+        st.modifiers |= HidKeyboardModifier_Shift;
+        set_key(&st, KEY_USAGE_LEFT_SHIFT);
+    }
+    if (mods & KEY_MOD_ALTGR) {
+        st.modifiers |= HidKeyboardModifier_RightAlt;
+        set_key(&st, KEY_USAGE_RIGHT_ALT);
+    }
+    set_key(&st, usage);
+    Result rc = hiddbgSetKeyboardAutoPilotState(&st);
+    sleep_ms(key_ms);
+    if (R_FAILED(rc))
+        return rc;
+    memset(&st, 0, sizeof(st));
+    rc = hiddbgSetKeyboardAutoPilotState(&st);
+    sleep_ms(key_ms);
+    return rc;
+}
+
+Result input_type_text(int layout, const char *text, int key_ms) {
     if (key_ms < 1) key_ms = 1;
     if (key_ms > 500) key_ms = 500;
-    Result rc = 0;
-    HiddbgKeyboardAutoPilotState st;
-    for (const char *p = text; *p && R_SUCCEEDED(rc); p++) {
-        uint8_t usage;
-        bool shift;
-        if (!keyboard_map_char(*p, &usage, &shift))
-            continue; // callers reject these up front
-        key_state(&st, usage, shift);
-        rc = hiddbgSetKeyboardAutoPilotState(&st);
-        sleep_ms(key_ms);
-        if (R_SUCCEEDED(rc)) {
-            key_state(&st, 0, false);
-            rc = hiddbgSetKeyboardAutoPilotState(&st);
-            sleep_ms(key_ms);
+    Result rc = key_tap(KEY_USAGE_NOOP, 0, key_ms);
+    uint8_t prev = KEY_USAGE_NOOP;
+    const char *p = text;
+    uint32_t cp;
+    while (R_SUCCEEDED(rc) && keyboard_next_codepoint(&p, &cp)) {
+        KeyStroke strokes[KEYBOARD_MAX_STROKES];
+        int n = keyboard_strokes(layout, cp, strokes); // 0: callers reject these up front
+        for (int i = 0; i < n && R_SUCCEEDED(rc); i++) {
+            if (strokes[i].usage == prev)
+                rc = key_tap(KEY_USAGE_NOOP, 0, key_ms);
+            if (R_SUCCEEDED(rc))
+                rc = key_tap(strokes[i].usage, strokes[i].mods, key_ms);
+            prev = strokes[i].usage;
         }
     }
     if (R_FAILED(rc))

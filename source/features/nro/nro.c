@@ -13,6 +13,7 @@
 // zlib, and the transfer never leaves the console anyway.
 #include "features/nro/nro.h"
 #include "core/http.h"
+#include "core/http_server.h"
 #include "core/log.h"
 #include "features/files/files.h"
 #include "platform/netif.h"
@@ -43,6 +44,9 @@ _Static_assert(2 + 5 + BLOCK_DATA + 4 <= 16 * 1024, "NRO chunk too large for hbm
 // The NRO is moved here while it is sent: hbmenu recreates (and truncates)
 // the original path as soon as the transfer starts.
 #define LAUNCH_SUFFIX ".launch"
+
+// How many times (100ms apart) to look for the file hbmenu wrote.
+#define NRO_SETTLE_TRIES 30
 
 static const char kPrefix[] = "/switch/";
 
@@ -242,14 +246,26 @@ bool nro_launch(const char *path, const char *args, size_t args_len, char *buf,
         fclose(f);
     close(fd);
 
-    // On success hbmenu has written the NRO back in place. On failure (or if
-    // this hbmenu saved it elsewhere) put the original back.
+    // On success hbmenu has written the NRO back in place, and the copy goes.
+    // The new file cannot even be stat()ed while hbmenu still holds it open
+    // (seen on hardware: hbmenu closes it only as it exits), so give it a
+    // moment before deciding it is not there.
     struct stat now;
-    if (ok && stat(fspath, &now) == 0) {
+    bool written = false;
+    for (int tries = 0; ok && tries < NRO_SETTLE_TRIES; tries++) {
+        if (stat(fspath, &now) == 0 && now.st_size == st.st_size) {
+            written = true;
+            break;
+        }
+        http_server_wait_ms(100);
+    }
+    if (written) {
         remove(tmp);
     } else {
+        // Failed, or this hbmenu saved it elsewhere: put the original back.
         remove(fspath);
-        rename(tmp, fspath);
+        if (rename(tmp, fspath) != 0)
+            LOGE("nro", "could not restore %s (errno %d); the original is %s", fspath, errno, tmp);
     }
     if (ok)
         LOGI("nro", "sent %s to hbmenu (%lld bytes)", path, (long long)st.st_size);

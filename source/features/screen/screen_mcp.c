@@ -85,9 +85,10 @@ static void tool_wait_for_screen(McpCall *call) {
     };
     char val[16];
     if (mcp_arg_string(call, "until", val, sizeof(val))) {
-        if (strcmp(val, "stable") == 0)
+        if (strcmp(val, "stable") == 0) {
             w.mode = SCREEN_WAIT_STABLE;
-        else if (strcmp(val, "change") != 0) {
+            w.threshold_pct = SCREEN_WAIT_STABLE_THRESHOLD;
+        } else if (strcmp(val, "change") != 0) {
             mcp_reply_error(call, "invalid 'until' (change or stable)");
             return;
         }

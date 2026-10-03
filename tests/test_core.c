@@ -348,37 +348,77 @@ static void test_args_swipe(void) {
     printf("apiargs swipe ok\n");
 }
 
+// One character's strokes on a layout, as "usage[+S][+G]" joined by spaces.
+static const char *strokes_str(int layout, const char *utf8) {
+    static char out[64];
+    const char *p = utf8;
+    uint32_t cp;
+    assert(keyboard_next_codepoint(&p, &cp) && *p == '\0');
+    KeyStroke k[KEYBOARD_MAX_STROKES];
+    int n = keyboard_strokes(layout, cp, k);
+    size_t pos = 0;
+    out[0] = '\0';
+    for (int i = 0; i < n; i++)
+        pos += (size_t)snprintf(out + pos, sizeof(out) - pos, "%s%d%s%s", i ? " " : "", k[i].usage,
+                                (k[i].mods & KEY_MOD_SHIFT) ? "+S" : "",
+                                (k[i].mods & KEY_MOD_ALTGR) ? "+G" : "");
+    return out;
+}
+
 static void test_keyboard(void) {
-    static const struct { char c; uint8_t usage; bool shift; } kCases[] = {
-        { 'a', 4, false },  { 'z', 29, false }, { 'A', 4, true },   { 'Z', 29, true },
-        { '1', 30, false }, { '0', 39, false }, { '!', 30, true },  { ')', 39, true },
-        { '\n', 40, false }, { '\b', 42, false }, { '\t', 43, false }, { ' ', 44, false },
-        { '-', 45, false }, { '_', 45, true },  { '=', 46, false }, { '+', 46, true },
-        { '[', 47, false }, { '{', 47, true },  { ']', 48, false }, { '}', 48, true },
-        { '\\', 49, false }, { '|', 49, true }, { ';', 51, false }, { ':', 51, true },
-        { '\'', 52, false }, { '"', 52, true }, { '`', 53, false }, { '~', 53, true },
-        { ',', 54, false }, { '<', 54, true },  { '.', 55, false }, { '>', 55, true },
-        { '/', 56, false }, { '?', 56, true },
+    const int US = KEYBOARD_LAYOUT_ENGLISH_US, UK = KEYBOARD_LAYOUT_ENGLISH_UK,
+              FR = KEYBOARD_LAYOUT_FRENCH;
+    static const struct { int layout; const char *ch, *want; } kCases[] = {
+        // US
+        { US, "a", "4" },     { US, "Z", "29+S" },   { US, "1", "30" },    { US, "!", "30+S" },
+        { US, "0", "39" },    { US, "\n", "40" },    { US, "\b", "42" },   { US, "\t", "43" },
+        { US, " ", "44" },    { US, "_", "45+S" },   { US, "\\", "49" },   { US, "|", "49+S" },
+        { US, "'", "52" },    { US, "\"", "52+S" },  { US, "`", "53" },    { US, "~", "53+S" },
+        { US, "@", "31+S" },  { US, "?", "56+S" },   { US, "\xc3\xa9", "" },
+        // UK: the characters it moves, and one it keeps
+        { UK, "\"", "31+S" }, { UK, "@", "52+S" },   { UK, "#", "50" },    { UK, "~", "50+S" },
+        { UK, "\\", "100" },  { UK, "|", "100+S" },  { UK, "\xc2\xa3", "32+S" },
+        { UK, "\xe2\x82\xac", "33+G" }, { UK, "?", "56+S" },
+        // French AZERTY, as checked on a console
+        { FR, "a", "20" },    { FR, "q", "4" },      { FR, "z", "26" },    { FR, "w", "29" },
+        { FR, "m", "51" },    { FR, "A", "20+S" },   { FR, "1", "30+S" },  { FR, "&", "30" },
+        { FR, "\xc3\xa9", "31" }, { FR, "@", "39+G" }, { FR, "~", "31+G" }, { FR, "`", "36+G" },
+        { FR, ",", "16" },    { FR, "?", "16+S" },   { FR, "<", "100" },   { FR, ">", "100+S" },
+        { FR, "^", "38+G" },  { FR, "\xc2\xa8", "47+S 44" },  // ¨ alone: dead key, then space
+        { FR, "\xc3\xaa", "47 8" },                             // ê: dead ^, then e
+        { FR, "\xc3\x9c", "47+S 24+S" },                    // Ü: dead ¨, then U
+        { FR, "\xe2\x82\xac", "8+G" },
     };
     for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); i++) {
-        uint8_t usage = 0;
-        bool shift = !kCases[i].shift;
-        assert(keyboard_map_char(kCases[i].c, &usage, &shift));
-        assert(usage == kCases[i].usage && shift == kCases[i].shift);
+        const char *got = strokes_str(kCases[i].layout, kCases[i].ch);
+        if (strcmp(got, kCases[i].want) != 0) {
+            fprintf(stderr, "layout %d '%s': got '%s', want '%s'\n", kCases[i].layout, kCases[i].ch, got,
+                   kCases[i].want);
+            assert(0);
+        }
     }
-    // Every printable ASCII character can be typed.
-    for (char c = 0x20; c < 0x7f; c++) {
-        uint8_t usage;
-        bool shift;
-        assert(keyboard_map_char(c, &usage, &shift));
-    }
-    uint8_t usage;
-    bool shift;
-    assert(!keyboard_map_char('\x1b', &usage, &shift)); // Escape would close the keyboard
-    assert(!keyboard_map_char('\r', &usage, &shift));
-    assert(!keyboard_map_char((char)0xc3, &usage, &shift));
-    assert(keyboard_find_unsupported("Hello, world!\n") == -1);
-    assert(keyboard_find_unsupported("caf\xc3\xa9") == 3);
+
+    // Every printable ASCII character can be typed on every supported layout.
+    const int layouts[] = { US, UK, FR };
+    for (size_t l = 0; l < 3; l++)
+        for (char c = 0x20; c < 0x7f; c++) {
+            char s[2] = { c, 0 };
+            assert(strokes_str(layouts[l], s)[0] != '\0');
+        }
+
+    assert(keyboard_find_unsupported(US, "Hello, world!\n") == -1);
+    assert(keyboard_find_unsupported(US, "caf\xc3\xa9") == 3);
+    assert(keyboard_find_unsupported(FR, "caf\xc3\xa9 \xc3\xaatre") == -1);
+    assert(keyboard_find_unsupported(FR, "\x1b") == 0);           // no Escape
+    assert(keyboard_find_unsupported(FR, "ok\xc3") == 2);         // truncated UTF-8
+
+    char msg[160];
+    assert(keyboard_check_text(FR, "d\xc3\xa9j\xc3\xa0", msg, sizeof(msg)));
+    assert(!keyboard_check_text(KEYBOARD_LAYOUT_GERMAN, "a", msg, sizeof(msg)));
+    assert(strstr(msg, "German") && strstr(msg, "not supported"));
+    assert(!keyboard_check_text(US, "x\xc3\xa9", msg, sizeof(msg)));
+    assert(strstr(msg, "byte 1") && strstr(msg, "English (US)"));
+    assert(!keyboard_check_text(-1, "a", msg, sizeof(msg)));
     printf("keyboard ok\n");
 }
 

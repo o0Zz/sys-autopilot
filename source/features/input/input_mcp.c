@@ -160,20 +160,17 @@ static void tool_clear_input(McpCall *call) {
 static void tool_type_text(McpCall *call) {
     char text[KEYBOARD_TEXT_MAX + 1];
     if (!mcp_arg_string(call, "text", text, sizeof(text)) || text[0] == '\0') {
-        mcp_reply_error(call, "missing 'text' (non-empty string, at most 256 characters)");
+        mcp_reply_error(call, "missing 'text' (non-empty string, at most 256 bytes)");
         return;
     }
-    int bad = keyboard_find_unsupported(text);
-    if (bad >= 0) {
-        char msg[128];
-        snprintf(msg, sizeof(msg),
-                 "character %d (0x%02x) cannot be typed: only US-keyboard ASCII, \\n, \\t and \\b",
-                 bad, (unsigned char)text[bad]);
+    int layout = input_keyboard_layout();
+    char msg[160];
+    if (!keyboard_check_text(layout, text, msg, sizeof(msg))) {
         mcp_reply_error(call, msg);
         return;
     }
     int key_ms = mcp_arg_int(call, "keyMs", INPUT_DEFAULT_KEY_MS);
-    reply_input(call, input_type_text(text, key_ms), "typed");
+    reply_input(call, input_type_text(layout, text, key_ms), "typed");
 }
 
 void input_mcp_register(void) {

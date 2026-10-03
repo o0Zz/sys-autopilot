@@ -48,6 +48,7 @@ extern size_t stub_frame_lens[4];
 extern int stub_nframes;
 extern int stub_captures;
 extern char stub_typed[512];
+extern int stub_keyboard_layout;
 extern int stub_key_ms;
 
 static const Config kNoAuth;
@@ -835,6 +836,17 @@ static void test_type_text(void) {
                "\"params\":{\"name\":\"type_text\",\"arguments\":{\"text\":\"caf\\u00e9\"}}}");
     assert(strstr(r, "\"isError\":true") && strstr(r, "cannot be typed"));
     assert(stub_typed[0] == '\0');
+
+    // The same text on a French console, and a layout not supported yet.
+    stub_keyboard_layout = 4;
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":112,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"type_text\",\"arguments\":{\"text\":\"caf\\u00e9\"}}}");
+    assert(strstr(r, "\"isError\":false") && strcmp(stub_typed, "caf\xc3\xa9") == 0);
+    stub_keyboard_layout = 8;
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":113,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"type_text\",\"arguments\":{\"text\":\"a\"}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "German"));
+    stub_keyboard_layout = 1;
     printf("type_text ok\n");
 }
 

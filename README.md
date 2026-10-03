@@ -116,7 +116,7 @@ OAuth tokens never expire. They are stored one per line in
 | Screen | `screenshot` (returned as an image the agent sees; `scale`, `crop`, `quality`), `wait_for_screen` |
 | Buttons | `tap_buttons`, `tap_sequence`, `hold_buttons`, `release_buttons`, `set_stick`, `clear_input` |
 | Touch | `tap_screen`, `swipe_screen` (1280x720, same space as the screenshot; handheld only) |
-| Keyboard | `type_text` (US layout, virtual USB keyboard) |
+| Keyboard | `type_text` (virtual USB keyboard; English US/UK and French console layouts) |
 | Files | `list_directory`, `read_file` (negative `offset` = tail), `upload_file`, `move_file`, `delete_file`, `hash_file`, `wait_for_file` |
 | Processes | `process_list`, `process_status`, `process_start`, `process_stop`, `process_restart`, `wait_for_process` |
 | Homebrew | `launch_nro`, `list_crash_reports` |
@@ -180,7 +180,7 @@ POST /input/stick    {"side":"left","x":1.0,"y":0.0,"durationMs":500}
 POST /input/clear | /controller/attach | /controller/detach
 POST /input/touch    {"x":640,"y":360}
 POST /input/swipe    {"fromX":640,"fromY":600,"toX":640,"toY":150,"durationMs":250}
-POST /input/text     {"text":"hello\n","keyMs":40}
+POST /input/text     {"text":"hello\n","keyMs":40}   UTF-8, in the console's keyboard layout
 
 GET    /files?path=/switch/app/log.txt[&offset=-4096]   read (or list a directory)
 PUT    /files?path=/switch/app.nro                      upload the request body
@@ -236,7 +236,8 @@ Push a tag (`git tag 1.6.0 && git push origin 1.6.0`) to publish a release.
 
 - Single-threaded: a tap with a duration blocks until it is released, and a
   `wait_for_*` call until it returns, which keeps agent actions in order.
-- `type_text` reaches only software that reads a USB keyboard.
+- `type_text` reaches only software that reads a USB keyboard, and supports
+  consoles whose keyboard layout is English (US), English (UK) or French.
 - `launch_nro` needs the Homebrew Menu open with its netloader running.
 - Touch input only works in handheld mode.
 - Screenshots fail where the OS blocks capture.
