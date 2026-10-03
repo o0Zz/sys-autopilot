@@ -6,6 +6,13 @@
 
 #include <string.h>
 
+#ifdef __SWITCH__
+#include <switch.h>
+#else
+#include <time.h>
+#include <unistd.h>
+#endif
+
 typedef struct {
     const char *method;
     const char *path;
@@ -57,6 +64,37 @@ void http_server_set_token_validator(HttpTokenValidator validator,
     g_resource_metadata_path = resource_metadata_path;
 }
 
+static HttpIdleHook g_idle_hook;
+
+void http_server_set_idle_hook(HttpIdleHook hook) {
+    g_idle_hook = hook;
+}
+
+bool http_server_wait_ms(int ms) {
+    while (ms > 0) {
+        int slice = ms < 500 ? ms : 500;
+        if (g_idle_hook && !g_idle_hook())
+            return false;
+#ifdef __SWITCH__
+        svcSleepThread((s64)slice * 1000000LL);
+#else
+        usleep((useconds_t)slice * 1000);
+#endif
+        ms -= slice;
+    }
+    return true;
+}
+
+uint64_t http_server_now_ms(void) {
+#ifdef __SWITCH__
+    return armTicksToNs(armGetSystemTick()) / 1000000ULL;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+#endif
+}
+
 // CORS preflights carry no Authorization header, and public prefixes are how
 // a client obtains credentials in the first place.
 static bool path_is_public(const HttpRequest *req) {
@@ -96,6 +134,7 @@ static void handle_options(HttpRequest *req) {
         "Connection: close\r\n"
         "\r\n";
     http_write_all(req->fd, hdr, sizeof(hdr) - 1);
+    req->keep_alive = false; // the reply says close: do not wait for another request
 }
 
 static bool route_matches(const Route *r, const char *path) {

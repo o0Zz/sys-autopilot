@@ -128,6 +128,36 @@ int main(void) {
         int st; waitpid(pid, &st, 0);
     }
 
+    // 9. Responses: reason phrases, escaped error messages, and a JSON body
+    //    too large for http_send_json() reported as an error instead of cut.
+    {
+        static char resp[4096];
+        int sv[2];
+
+        assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+        http_send_error(sv[0], 409, "path \"a\\b\" exists");
+        close(sv[0]);
+        ssize_t n = read(sv[1], resp, sizeof(resp) - 1);
+        assert(n > 0);
+        resp[n] = '\0';
+        close(sv[1]);
+        assert(strncmp(resp, "HTTP/1.1 409 Conflict\r\n", 23) == 0);
+        assert(strstr(resp, "{\"error\":\"path \\\"a\\\\b\\\" exists\"}"));
+
+        char big[1100];
+        memset(big, 'x', sizeof(big) - 1);
+        big[sizeof(big) - 1] = '\0';
+        assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+        http_send_json(sv[0], 200, "{\"v\":\"%s\"}", big);
+        close(sv[0]);
+        n = read(sv[1], resp, sizeof(resp) - 1);
+        assert(n > 0);
+        resp[n] = '\0';
+        close(sv[1]);
+        assert(strncmp(resp, "HTTP/1.1 500 Internal Server Error\r\n", 36) == 0);
+        assert(strstr(resp, "{\"error\":\"response too large\"}"));
+    }
+
     printf("all http tests passed\n");
     return 0;
 }

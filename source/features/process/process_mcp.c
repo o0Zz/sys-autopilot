@@ -5,6 +5,7 @@
 #include "features/process/process_tools.h"
 
 #include <stdio.h>
+#include <string.h>
 
 // Shared by the tools that take a title id. Replies with its own error and returns false.
 static bool arg_title_id(McpCall *call, uint64_t *out) {
@@ -137,10 +138,41 @@ static void tool_process_restart(McpCall *call) {
     mcp_reply_text(call, msg);
 }
 
+static void tool_wait_for_process(McpCall *call) {
+    uint64_t tid;
+    if (!arg_title_id(call, &tid))
+        return;
+    char state[16] = "running";
+    mcp_arg_string(call, "state", state, sizeof(state));
+    bool want_running = strcmp(state, "running") == 0;
+    if (!want_running && strcmp(state, "stopped") != 0) {
+        mcp_reply_error(call, "invalid 'state' (running or stopped)");
+        return;
+    }
+    int timeout = mcp_arg_int(call, "timeoutMs", PROCESS_WAIT_DEFAULT_TIMEOUT_MS);
+
+    ProcessStatus st;
+    int elapsed = 0;
+    char msg[160];
+    if (process_wait(tid, want_running, timeout, &st, &elapsed)) {
+        if (want_running)
+            snprintf(msg, sizeof(msg), "%016llx is running (pid %llu) after %d ms",
+                     (unsigned long long)tid, (unsigned long long)st.pid, elapsed);
+        else
+            snprintf(msg, sizeof(msg), "%016llx is not running after %d ms",
+                     (unsigned long long)tid, elapsed);
+    } else {
+        snprintf(msg, sizeof(msg), "timed out after %d ms: %016llx is %s", elapsed,
+                 (unsigned long long)tid, st.running ? "still running" : "still not running");
+    }
+    mcp_reply_text(call, msg);
+}
+
 void process_mcp_register(void) {
     mcp_server_register_tool(&kToolProcessStatus,  tool_process_status);
     mcp_server_register_tool(&kToolProcessList,    tool_process_list);
     mcp_server_register_tool(&kToolProcessStart,   tool_process_start);
     mcp_server_register_tool(&kToolProcessStop,    tool_process_stop);
     mcp_server_register_tool(&kToolProcessRestart, tool_process_restart);
+    mcp_server_register_tool(&kToolWaitForProcess, tool_wait_for_process);
 }

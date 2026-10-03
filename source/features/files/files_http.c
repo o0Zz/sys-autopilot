@@ -145,7 +145,7 @@ static void get_hash(HttpRequest *req) {
     }
     http_send_json(req->fd, 200,
                    "{\"path\":\"%s\",\"algorithm\":\"sha256\",\"hash\":\"%s\",\"size\":%lld}",
-                   fspath + strlen(FILES_ROOT), hexbuf, size);
+                   request_json_escape(req, fspath + strlen(FILES_ROOT)), hexbuf, size);
 }
 
 // PUT /files?path=P: streamed upload.
@@ -167,7 +167,13 @@ static void put_files(HttpRequest *req) {
 
     files_mkdirs_for(fspath);
 
-    FILE *f = fopen(fspath, "wb");
+    // Stream into a sibling temp file and move it into place only once the
+    // whole body has arrived: a dropped connection must not cost the file
+    // being replaced (an exefs.nsp, say).
+    char tmp[800];
+    snprintf(tmp, sizeof(tmp), "%s" FILES_UPLOAD_SUFFIX, fspath);
+
+    FILE *f = fopen(tmp, "wb");
     if (!f) {
         http_send_error(req->fd, 500, "failed to open file for writing");
         return;
@@ -185,22 +191,29 @@ static void put_files(HttpRequest *req) {
         }
         total += (size_t)n;
     }
-    fclose(f);
+    if (fclose(f) != 0)
+        write_err = true;
 
     if (write_err) {
-        remove(fspath);
+        remove(tmp);
         http_send_error(req->fd, 507, "write failed (sd card full?)");
         return;
     }
     if (total != req->content_length) {
-        remove(fspath);
+        remove(tmp);
         http_send_error(req->fd, 400, "incomplete upload");
+        return;
+    }
+    remove(fspath); // rename() does not overwrite on all newlib targets
+    if (rename(tmp, fspath) != 0) {
+        remove(tmp);
+        http_send_error(req->fd, 500, "failed to move upload into place");
         return;
     }
 
     LOGI("files", "wrote %zu bytes to %s", total, fspath);
     http_send_json(req->fd, 201, "{\"written\":%zu,\"path\":\"%s\"}", total,
-                   fspath + strlen(FILES_ROOT));
+                   request_json_escape(req, fspath + strlen(FILES_ROOT)));
 }
 
 // DELETE /files?path=P: file or empty directory.
@@ -214,7 +227,8 @@ static void delete_files(HttpRequest *req) {
         http_send_error(req->fd, strstr(err, "no such") ? 404 : 500, err);
         return;
     }
-    http_send_json(req->fd, 200, "{\"deleted\":\"%s\"}", fspath + strlen(FILES_ROOT));
+    http_send_json(req->fd, 200, "{\"deleted\":\"%s\"}",
+                   request_json_escape(req, fspath + strlen(FILES_ROOT)));
 }
 
 // POST /files/move?path=P&to=Q
@@ -241,7 +255,34 @@ static void post_move(HttpRequest *req) {
     }
     LOGI("files", "moved %s -> %s", src, dst);
     http_send_json(req->fd, 200, "{\"moved\":\"%s\",\"to\":\"%s\"}",
-                   src + strlen(FILES_ROOT), dst + strlen(FILES_ROOT));
+                   request_json_escape(req, src + strlen(FILES_ROOT)),
+                   request_json_escape(req, dst + strlen(FILES_ROOT)));
+}
+
+// GET /wait/file?path=P[&contains=TEXT&newOnly=1&timeoutMs=N]
+static void get_wait(HttpRequest *req) {
+    char fspath[768];
+    if (!resolve_query_path(req, fspath, sizeof(fspath)))
+        return;
+    char contains[FILES_WAIT_MAX_NEEDLE + 1] = "";
+    http_query_get(req, "contains", contains, sizeof(contains));
+    char val[16] = "";
+    bool new_only = http_query_get(req, "newOnly", val, sizeof(val)) &&
+                    (strcmp(val, "1") == 0 || strcmp(val, "true") == 0);
+    int timeout = FILES_WAIT_DEFAULT_TIMEOUT_MS;
+    if (http_query_get(req, "timeoutMs", val, sizeof(val)))
+        timeout = atoi(val);
+
+    char *buf = request_alloc(req, FILES_IO_BUF_SIZE);
+    if (!buf) {
+        http_send_error(req->fd, 500, "out of request memory");
+        return;
+    }
+    FilesWait res;
+    files_wait(fspath, contains, new_only, timeout, buf, FILES_IO_BUF_SIZE, &res);
+    http_send_json(req->fd, 200, "{\"met\":%s,\"elapsedMs\":%d,\"exists\":%s,\"size\":%lld}",
+                   res.met ? "true" : "false", res.elapsed_ms, res.exists ? "true" : "false",
+                   res.size);
 }
 
 void files_http_register(void) {
@@ -250,4 +291,5 @@ void files_http_register(void) {
     http_server_register_route("PUT",    "/files",      put_files);
     http_server_register_route("DELETE", "/files",      delete_files);
     http_server_register_route("POST",   "/files/move", post_move);
+    http_server_register_route("GET",    "/wait/file",  get_wait);
 }

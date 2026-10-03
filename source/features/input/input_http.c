@@ -3,6 +3,7 @@
 #include "core/request.h"
 #include "features/input/input.h"
 #include "features/input/input_args.h"
+#include "features/input/keyboard.h"
 
 #include <assert.h>
 
@@ -87,6 +88,24 @@ static void post_stick(HttpRequest *req) {
     send_input_result(req, input_stick(side, x, y, duration));
 }
 
+// POST /input/text {"text":"hello\n","keyMs":40}
+static void post_text(HttpRequest *req) {
+    JsonDoc *doc = request_read_json(req);
+    if (!doc)
+        return;
+    char text[KEYBOARD_TEXT_MAX + 1];
+    int t = json_obj_get(doc, 0, "text");
+    if (t < 0 || !json_get_string(doc, t, text, sizeof(text)) || text[0] == '\0') {
+        http_send_error(req->fd, 400, "missing 'text' (non-empty string, at most 256 characters)");
+        return;
+    }
+    if (keyboard_find_unsupported(text) >= 0) {
+        http_send_error(req->fd, 400, "'text' has characters a US keyboard cannot type");
+        return;
+    }
+    send_input_result(req, input_type_text(text, json_obj_int(doc, 0, "keyMs", INPUT_DEFAULT_KEY_MS)));
+}
+
 static void post_clear(HttpRequest *req)  { send_input_result(req, input_clear()); }
 static void post_attach(HttpRequest *req) { send_input_result(req, input_attach()); }
 static void post_detach(HttpRequest *req) { send_input_result(req, input_detach()); }
@@ -98,6 +117,7 @@ void input_http_register(void) {
     http_server_register_route("POST", "/input/stick",       post_stick);
     http_server_register_route("POST", "/input/touch",       post_touch);
     http_server_register_route("POST", "/input/swipe",       post_swipe);
+    http_server_register_route("POST", "/input/text",        post_text);
     http_server_register_route("POST", "/input/clear",       post_clear);
     http_server_register_route("POST", "/controller/attach", post_attach);
     http_server_register_route("POST", "/controller/detach", post_detach);

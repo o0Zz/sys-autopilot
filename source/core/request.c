@@ -12,8 +12,27 @@ void *request_alloc(HttpRequest *req, size_t size) {
     return g_request_memory + start;
 }
 
+size_t request_mark(const HttpRequest *req) {
+    return req->mem_used;
+}
+
+void request_rewind(HttpRequest *req, size_t mark) {
+    if (mark < req->mem_used)
+        req->mem_used = mark;
+}
+
 void request_release(HttpRequest *req) {
     req->mem_used = 0;
+}
+
+const char *request_json_escape(HttpRequest *req, const char *s) {
+    size_t len = strlen(s);
+    size_t esc_len = json_escaped_len(s, len);
+    char *out = request_alloc(req, esc_len + 1);
+    if (!out)
+        return "";
+    json_escape(s, len, out, esc_len + 1);
+    return out;
 }
 
 JsonDoc *request_read_json(HttpRequest *req) {

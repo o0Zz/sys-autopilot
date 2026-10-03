@@ -2,6 +2,7 @@
 #include "features/input/input.h"
 #include "features/input/input_args.h"
 #include "features/input/input_tools.h"
+#include "features/input/keyboard.h"
 #include "features/mcp/mcp_server.h"
 #include "features/screen/screen_mcp.h"
 
@@ -31,20 +32,29 @@ static void reply_input(McpCall *call, Result rc, const char *ok_msg) {
         return;
     }
 
+    ScreenOpts opts;
+    const char *perr = screen_mcp_parse_opts(call, "screenshotScale", &opts);
+    char err[96];
+    if (perr) {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "%s (no screenshot: %s)", ok_msg, perr);
+        mcp_reply_text(call, msg);
+        return;
+    }
+
     int delay = clamp_delay(mcp_arg_int(call, "screenshotDelayMs", 250));
     if (delay > 0)
         svcSleepThread((s64)delay * 1000000LL);
 
-    u64 size = 0;
-    Result cap_rc;
-    const u8 *jpeg = screen_mcp_capture(call, ViLayerStack_Screenshot, &size, &cap_rc);
+    size_t size = 0;
+    const u8 *jpeg = screen_mcp_capture(call, &opts, &size, err, sizeof(err));
     if (!jpeg) {
-        char msg[96];
-        snprintf(msg, sizeof(msg), "%s (screenshot failed: rc=0x%x)", ok_msg, cap_rc);
+        char msg[160];
+        snprintf(msg, sizeof(msg), "%s (screenshot failed: %s)", ok_msg, err);
         mcp_reply_text(call, msg);
         return;
     }
-    mcp_reply_text_and_image(call, ok_msg, jpeg, (size_t)size);
+    mcp_reply_text_and_image(call, ok_msg, jpeg, size);
 }
 
 static void tool_tap_buttons(McpCall *call) {
@@ -147,6 +157,25 @@ static void tool_clear_input(McpCall *call) {
     reply_input(call, input_clear(), "ok");
 }
 
+static void tool_type_text(McpCall *call) {
+    char text[KEYBOARD_TEXT_MAX + 1];
+    if (!mcp_arg_string(call, "text", text, sizeof(text)) || text[0] == '\0') {
+        mcp_reply_error(call, "missing 'text' (non-empty string, at most 256 characters)");
+        return;
+    }
+    int bad = keyboard_find_unsupported(text);
+    if (bad >= 0) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "character %d (0x%02x) cannot be typed: only US-keyboard ASCII, \\n, \\t and \\b",
+                 bad, (unsigned char)text[bad]);
+        mcp_reply_error(call, msg);
+        return;
+    }
+    int key_ms = mcp_arg_int(call, "keyMs", INPUT_DEFAULT_KEY_MS);
+    reply_input(call, input_type_text(text, key_ms), "typed");
+}
+
 void input_mcp_register(void) {
     mcp_server_register_tool(&kToolTapButtons,     tool_tap_buttons);
     mcp_server_register_tool(&kToolTapSequence,    tool_tap_sequence);
@@ -156,4 +185,5 @@ void input_mcp_register(void) {
     mcp_server_register_tool(&kToolTapScreen,      tool_tap_screen);
     mcp_server_register_tool(&kToolSwipeScreen,    tool_swipe_screen);
     mcp_server_register_tool(&kToolClearInput,     tool_clear_input);
+    mcp_server_register_tool(&kToolTypeText,       tool_type_text);
 }

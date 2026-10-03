@@ -73,6 +73,33 @@
           "titleId"
         ]
       }
+    },
+    {
+      "name": "wait_for_process",
+      "description": "Block until the program with the given title id is running (state=running, e.g. after process_start or launching a game) or has exited (state=stopped, e.g. to catch a crash or a clean exit). Returns as soon as the state is reached, or reports a timeout. Other requests to the console wait while this runs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "titleId": {
+            "$ref": "#/$defs/titleId"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped"
+            ],
+            "description": "State to wait for. Default running."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "description": "Give up after this long. Default 10000, max 30000."
+          }
+        },
+        "required": [
+          "titleId"
+        ]
+      }
     }
   ]
 }

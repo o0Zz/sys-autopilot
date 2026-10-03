@@ -1,5 +1,6 @@
 #include "features/process/process.h"
 #include "features/input/input.h"
+#include "core/http_server.h"
 #include "core/log.h"
 
 #include <stddef.h>
@@ -345,3 +346,27 @@ int process_list(ProcessEntry *out, int max, uint32_t *out_rc) {
 }
 
 #endif
+
+// --- waiting ---------------------------------------------------------------------
+
+#define PROCESS_WAIT_POLL_MS 100
+
+bool process_wait(uint64_t program_id, bool want_running, int timeout_ms, ProcessStatus *out,
+                  int *elapsed_ms) {
+    if (timeout_ms < 0)
+        timeout_ms = 0;
+    if (timeout_ms > HTTP_MAX_WAIT_MS)
+        timeout_ms = HTTP_MAX_WAIT_MS;
+    uint64_t start = http_server_now_ms();
+    for (;;) {
+        process_status(program_id, out);
+        *elapsed_ms = (int)(http_server_now_ms() - start);
+        if (out->running == want_running)
+            return true;
+        if (*elapsed_ms >= timeout_ms)
+            return false;
+        int left = timeout_ms - *elapsed_ms;
+        if (!http_server_wait_ms(left < PROCESS_WAIT_POLL_MS ? left : PROCESS_WAIT_POLL_MS))
+            return false;
+    }
+}

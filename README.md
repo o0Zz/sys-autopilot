@@ -19,6 +19,13 @@ A fork of [TooTallNate/sys-autopilot](https://github.com/TooTallNate/sys-autopil
   Reload a sysmodule without rebooting.
 - **File explorer** in the browser at `http://<console>:4150/`.
 - **File move / rename**, **touch gestures** (tap, swipe), **keep awake**.
+- **Smaller screenshots**: scale (1/2, 1/4, 1/8), crop and JPEG quality, so
+  an agent spends a quarter of the image tokens when it only needs to see
+  where it is.
+- **Wait tools**: block until the screen changes or settles, a program starts
+  or exits, or a log line appears, instead of polling with screenshots.
+- **Launch an NRO** through hbmenu's netloader, **list crash reports**, and
+  **type text** on a virtual USB keyboard.
 - **Smaller footprint**: 1 MB heap instead of 4 MB, one shared per-request
   buffer instead of per-feature statics, about 65 KB less code.
 - **Reliable networking**: ten sockets instead of two for the same memory, so
@@ -106,11 +113,13 @@ OAuth tokens never expire. They are stored one per line in
 
 | Area | Tools |
 |---|---|
-| Screen | `screenshot` (returned as an image the agent sees) |
+| Screen | `screenshot` (returned as an image the agent sees; `scale`, `crop`, `quality`), `wait_for_screen` |
 | Buttons | `tap_buttons`, `tap_sequence`, `hold_buttons`, `release_buttons`, `set_stick`, `clear_input` |
 | Touch | `tap_screen`, `swipe_screen` (1280x720, same space as the screenshot; handheld only) |
-| Files | `list_directory`, `read_file` (negative `offset` = tail), `upload_file`, `move_file`, `delete_file`, `hash_file` |
-| Processes | `process_list`, `process_status`, `process_start`, `process_stop`, `process_restart` |
+| Keyboard | `type_text` (US layout, virtual USB keyboard) |
+| Files | `list_directory`, `read_file` (negative `offset` = tail), `upload_file`, `move_file`, `delete_file`, `hash_file`, `wait_for_file` |
+| Processes | `process_list`, `process_status`, `process_start`, `process_stop`, `process_restart`, `wait_for_process` |
+| Homebrew | `launch_nro`, `list_crash_reports` |
 | Settings | `get_*` / `set_*` for `theme`, `nickname`, `brightness`, `volume`, `auto_time`, `datetime`; `airplane_mode` |
 | System | `status`, `list_installed_titles`, `get_dns`, `set_dns`, `sleep`, `restart`, `power_off` |
 | Auth | `create_token`, `revoke_token` |
@@ -123,6 +132,26 @@ arguments are generated token by token, so big uploads cost a lot of context.
 
 `airplane_mode` is one-way: it cuts the server off, and wireless must be
 turned back on at the console.
+
+The input tools take `screenshot: true` to return a screenshot with their
+result, and `screenshotScale` to shrink it. A 640x360 screenshot (scale 0.5)
+costs a quarter of a full one; crop at scale 1 to read small text.
+
+The `wait_for_*` tools return as soon as their condition holds, or after
+`timeoutMs` (at most 30 s). The server is single-threaded, so other requests
+wait meanwhile.
+
+## Launching homebrew
+
+Only the Homebrew Menu can start an `.nro`, so `launch_nro` (and
+`POST /nro/launch`) talks to its netloader, as `nxlink` does from a PC:
+
+1. Open the Homebrew Menu and press Y once. It now waits for nxlink.
+2. Upload the build under `/switch/` (`curl -T app.nro ".../files?path=/switch/app/app.nro"`).
+3. Call `launch_nro` with that path. hbmenu exits and starts it.
+
+Repeat 1 and 3 for every launch: hbmenu leaves netloader mode once it has
+started an NRO. `list_crash_reports` then tells you if it crashed.
 
 ## Reloading a sysmodule
 
@@ -144,13 +173,14 @@ All responses are JSON unless noted. Send `Authorization: Bearer <token>` (or
 Basic) when auth is on. Paths are rooted at the SD card.
 
 ```
-GET  /screenshot                                  image/jpeg, 1280x720
+GET  /screenshot[?scale=0.5&quality=80&crop=x,y,w,h]  image/jpeg, 1280x720 at scale 1
 POST /input/tap      {"buttons":["A"],"durationMs":100}
 POST /input/hold | /input/release  {"buttons":["ZL"]}
 POST /input/stick    {"side":"left","x":1.0,"y":0.0,"durationMs":500}
 POST /input/clear | /controller/attach | /controller/detach
 POST /input/touch    {"x":640,"y":360}
 POST /input/swipe    {"fromX":640,"fromY":600,"toX":640,"toY":150,"durationMs":250}
+POST /input/text     {"text":"hello\n","keyMs":40}
 
 GET    /files?path=/switch/app/log.txt[&offset=-4096]   read (or list a directory)
 PUT    /files?path=/switch/app.nro                      upload the request body
@@ -169,6 +199,14 @@ GET|POST /settings/{theme,nickname,brightness,volume,auto-time,datetime}
 POST /settings/airplane                           one-way, see above
 POST /power/sleep | /power/restart | /power/off
 GET  /status                                      version, firmware, heap, battery, uptime
+
+GET  /wait/screen?until=change|stable&timeoutMs=10000&thresholdPercent=1&stableMs=1000
+GET  /wait/process?titleId=<id>&state=running|stopped&timeoutMs=10000
+GET  /wait/file?path=/switch/app/log.txt&contains=READY&newOnly=1&timeoutMs=10000
+     each answers {"met":true|false,"elapsedMs":…}
+
+POST /nro/launch     {"path":"/switch/app/app.nro","args":["--test"]}   see above
+GET  /crash-reports[?limit=10]                    newest first
 ```
 
 ## File explorer
@@ -189,15 +227,17 @@ make FEATURES="explorer power"    # optional features to include (run make clean
 ./tests/run.sh                    # host tests, needs only a C compiler
 ```
 
-The optional features are `explorer install network power process titles`
+The optional features are `crash explorer install network nro power process titles`
 (all on by default). `status screen input files settings` are always built.
 
 Push a tag (`git tag 1.6.0 && git push origin 1.6.0`) to publish a release.
 
 ## Limitations
 
-- Single-threaded: a tap with a duration blocks until it is released, which
-  keeps agent actions in order.
+- Single-threaded: a tap with a duration blocks until it is released, and a
+  `wait_for_*` call until it returns, which keeps agent actions in order.
+- `type_text` reaches only software that reads a USB keyboard.
+- `launch_nro` needs the Homebrew Menu open with its netloader running.
 - Touch input only works in handheld mode.
 - Screenshots fail where the OS blocks capture.
 - No TLS.

@@ -25,6 +25,11 @@ bool power_init(void);
 // sockets, in the Sleep case).
 PowerEvent power_poll(void);
 
+// True when the console has asked to sleep. For handlers that wait: they
+// return early so the server loop can quiesce. The request is kept, and the
+// loop's next power_poll() returns it.
+bool power_sleep_requested(void);
+
 // Acknowledges the most recent request returned by power_poll().
 void power_ack(void);
 

@@ -36,7 +36,8 @@ The image has no host `cc`; install `gcc libc6-dev` with apt before running
   memory, config, mDNS, logging.
 - `source/platform/`: power (PSC sleep/wake, keep-awake), network interface,
   device info.
-- `source/util/`: base64, JSON (jsmn wrappers), SHA-256.
+- `source/util/`: base64, JSON (jsmn wrappers), SHA-256, a streaming JPEG
+  transcoder (scaled and cropped screenshots).
 - `source/features/<name>/`: one folder per feature.
   - `<name>.c`: the service, no HTTP.
   - `<name>_http.c`: registers REST routes with `http_server_register_route`.
@@ -61,8 +62,8 @@ The image has no host `cc`; install `gcc libc6-dev` with apt before running
    `<name>_tools.h`; include it as `features/<name>/<name>_tools.h`.
 6. Add a test to `tests/run.sh`.
 
-Route and tool tables are fixed size: `HTTP_MAX_ROUTES` (64) in
-`core/http_server.h` and `MCP_MAX_TOOLS` (48) in `features/mcp/mcp_server.h`.
+Route and tool tables are fixed size: `HTTP_MAX_ROUTES` (80) in
+`core/http_server.h` and `MCP_MAX_TOOLS` (64) in `features/mcp/mcp_server.h`.
 
 ## Rules
 
@@ -82,7 +83,11 @@ Route and tool tables are fixed size: `HTTP_MAX_ROUTES` (64) in
   acknowledgement and wake. The server loop closes sockets and suspends file
   logging for that window. Do not add I/O that can run there.
 - **Single-threaded server.** A handler blocks every other client until it
-  returns. Keep handlers bounded.
+  returns. Keep handlers bounded. A handler that waits (the `wait_for_*`
+  tools) caps itself at `HTTP_MAX_WAIT_MS` and sleeps through
+  `http_server_wait_ms()`, which keeps the console awake meanwhile; one that
+  loops over request memory rewinds it with `request_mark()` /
+  `request_rewind()`.
 - **u64 ids as strings in JSON** (pids, title ids). JSON numbers lose
   precision in most clients.
 - `.sh`, `.html` and `.json` files must stay LF (`.gitattributes`). With

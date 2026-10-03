@@ -8,6 +8,7 @@
 #include "features/input/input_args.h"
 #include "util/base64.h"
 #include "features/input/buttons.h"
+#include "features/input/keyboard.h"
 #include "util/json.h"
 #include "features/mcp/jstream.h"
 #include "util/sha256.h"
@@ -347,7 +348,42 @@ static void test_args_swipe(void) {
     printf("apiargs swipe ok\n");
 }
 
+static void test_keyboard(void) {
+    static const struct { char c; uint8_t usage; bool shift; } kCases[] = {
+        { 'a', 4, false },  { 'z', 29, false }, { 'A', 4, true },   { 'Z', 29, true },
+        { '1', 30, false }, { '0', 39, false }, { '!', 30, true },  { ')', 39, true },
+        { '\n', 40, false }, { '\b', 42, false }, { '\t', 43, false }, { ' ', 44, false },
+        { '-', 45, false }, { '_', 45, true },  { '=', 46, false }, { '+', 46, true },
+        { '[', 47, false }, { '{', 47, true },  { ']', 48, false }, { '}', 48, true },
+        { '\\', 49, false }, { '|', 49, true }, { ';', 51, false }, { ':', 51, true },
+        { '\'', 52, false }, { '"', 52, true }, { '`', 53, false }, { '~', 53, true },
+        { ',', 54, false }, { '<', 54, true },  { '.', 55, false }, { '>', 55, true },
+        { '/', 56, false }, { '?', 56, true },
+    };
+    for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); i++) {
+        uint8_t usage = 0;
+        bool shift = !kCases[i].shift;
+        assert(keyboard_map_char(kCases[i].c, &usage, &shift));
+        assert(usage == kCases[i].usage && shift == kCases[i].shift);
+    }
+    // Every printable ASCII character can be typed.
+    for (char c = 0x20; c < 0x7f; c++) {
+        uint8_t usage;
+        bool shift;
+        assert(keyboard_map_char(c, &usage, &shift));
+    }
+    uint8_t usage;
+    bool shift;
+    assert(!keyboard_map_char('\x1b', &usage, &shift)); // Escape would close the keyboard
+    assert(!keyboard_map_char('\r', &usage, &shift));
+    assert(!keyboard_map_char((char)0xc3, &usage, &shift));
+    assert(keyboard_find_unsupported("Hello, world!\n") == -1);
+    assert(keyboard_find_unsupported("caf\xc3\xa9") == 3);
+    printf("keyboard ok\n");
+}
+
 int main(void) {
+    test_keyboard();
     test_base64();
     test_json();
     test_jstream();

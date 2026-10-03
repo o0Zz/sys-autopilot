@@ -1,5 +1,6 @@
 #include "core/http.h"
 #include "util/base64.h"
+#include "util/json.h"
 #include "core/log.h"
 
 #include <stdio.h>
@@ -66,14 +67,19 @@ static const char *status_reason(int code) {
         case 100: return "Continue";
         case 200: return "OK";
         case 201: return "Created";
+        case 202: return "Accepted";
         case 204: return "No Content";
+        case 302: return "Found";
         case 400: return "Bad Request";
         case 401: return "Unauthorized";
+        case 403: return "Forbidden";
         case 404: return "Not Found";
         case 405: return "Method Not Allowed";
+        case 409: return "Conflict";
         case 411: return "Length Required";
         case 413: return "Payload Too Large";
         case 500: return "Internal Server Error";
+        case 503: return "Service Unavailable";
         case 507: return "Insufficient Storage";
         default:  return "Unknown";
     }
@@ -329,6 +335,8 @@ static void send_header_extra(int fd, int code, const char *content_type,
                      "\r\n",
                      code, status_reason(code), extra, content_type, content_length,
                      conn_hdr());
+    if (n < 0 || (size_t)n >= sizeof(hdr))
+        return; // cannot happen with the callers' bounded inputs; never send a cut header
     http_write_all(fd, hdr, (size_t)n);
 }
 
@@ -362,15 +370,20 @@ void http_send_json(int fd, int code, const char *fmt, ...) {
     va_start(ap, fmt);
     int n = vsnprintf(body, sizeof(body), fmt, ap);
     va_end(ap);
-    if (n < 0)
-        n = 0;
-    if ((size_t)n >= sizeof(body))
-        n = sizeof(body) - 1;
+    if (n < 0 || (size_t)n >= sizeof(body)) {
+        // A cut body would be invalid JSON; say so instead.
+        static const char kTooLong[] = "{\"error\":\"response too large\"}";
+        http_send_response(fd, 500, "application/json", kTooLong, sizeof(kTooLong) - 1);
+        return;
+    }
     http_send_response(fd, code, "application/json", body, (size_t)n);
 }
 
 void http_send_error(int fd, int code, const char *msg) {
-    http_send_json(fd, code, "{\"error\":\"%s\"}", msg);
+    char escaped[512];
+    if (json_escape(msg, strlen(msg), escaped, sizeof(escaped)) == (size_t)-1)
+        snprintf(escaped, sizeof(escaped), "error message too long");
+    http_send_json(fd, code, "{\"error\":\"%s\"}", escaped);
 }
 
 void http_send_unauthorized(const HttpRequest *req, bool offer_basic,

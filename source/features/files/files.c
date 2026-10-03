@@ -1,4 +1,5 @@
 #include "features/files/files.h"
+#include "core/http_server.h"
 #include "util/json.h"
 #include "util/sha256.h"
 
@@ -240,4 +241,85 @@ bool files_hash_sha256(const char *fspath, void *buf, size_t buf_size,
 
     *out_size = total;
     return true;
+}
+
+// --- waiting -----------------------------------------------------------------------
+
+#define FILES_WAIT_POLL_MS 200
+
+static bool mem_find(const char *hay, size_t hlen, const char *needle, size_t nlen) {
+    if (nlen == 0)
+        return true;
+    for (size_t i = 0; i + nlen <= hlen; i++)
+        if (hay[i] == needle[0] && memcmp(hay + i, needle, nlen) == 0)
+            return true;
+    return false;
+}
+
+// Searches fspath from byte `from` to its end, overlapping the previous
+// search by the needle's length so a match across the boundary is not lost.
+static bool search_file(const char *fspath, long long from, const char *needle, size_t nlen,
+                        char *buf, size_t bufsz) {
+    FILE *f = fopen(fspath, "rb");
+    if (!f)
+        return false;
+    long long off = from > (long long)(nlen - 1) ? from - (long long)(nlen - 1) : 0;
+    bool found = false;
+    if (fseek(f, (long)off, SEEK_SET) == 0) {
+        size_t keep = 0;
+        for (;;) {
+            size_t n = fread(buf + keep, 1, bufsz - keep, f);
+            if (n == 0)
+                break;
+            size_t total = keep + n;
+            if (mem_find(buf, total, needle, nlen)) {
+                found = true;
+                break;
+            }
+            keep = nlen - 1 < total ? nlen - 1 : total;
+            memmove(buf, buf + total - keep, keep);
+        }
+    }
+    fclose(f);
+    return found;
+}
+
+void files_wait(const char *fspath, const char *contains, bool new_only, int timeout_ms,
+                char *buf, size_t bufsz, FilesWait *res) {
+    memset(res, 0, sizeof(*res));
+    if (timeout_ms < 0)
+        timeout_ms = 0;
+    if (timeout_ms > HTTP_MAX_WAIT_MS)
+        timeout_ms = HTTP_MAX_WAIT_MS;
+    size_t nlen = contains ? strlen(contains) : 0;
+
+    // Everything before `scanned` has been searched (or does not count).
+    long long scanned = 0;
+    struct stat st;
+    if (new_only && stat(fspath, &st) == 0)
+        scanned = (long long)st.st_size;
+
+    uint64_t start = http_server_now_ms();
+    for (;;) {
+        res->exists = stat(fspath, &st) == 0 && S_ISREG(st.st_mode);
+        if (res->exists) {
+            res->size = (long long)st.st_size;
+            if (nlen == 0) {
+                res->met = true;
+            } else {
+                if (res->size < scanned)
+                    scanned = 0; // rewritten: search it all again
+                if (res->size > scanned &&
+                    search_file(fspath, scanned, contains, nlen, buf, bufsz))
+                    res->met = true;
+                scanned = res->size;
+            }
+        }
+        res->elapsed_ms = (int)(http_server_now_ms() - start);
+        if (res->met || res->elapsed_ms >= timeout_ms)
+            return;
+        int left = timeout_ms - res->elapsed_ms;
+        if (!http_server_wait_ms(left < FILES_WAIT_POLL_MS ? left : FILES_WAIT_POLL_MS))
+            return;
+    }
 }

@@ -270,6 +270,11 @@ bool mcp_arg_string(const McpCall *call, const char *key, char *out, size_t outs
     return tok >= 0 && json_get_string(call->doc, tok, out, outsz);
 }
 
+bool mcp_arg_double(const McpCall *call, const char *key, double *out) {
+    int tok = json_obj_get(call->doc, call->args, key);
+    return tok >= 0 && json_get_double(call->doc, tok, out);
+}
+
 bool mcp_arg_bool(const McpCall *call, const char *key, bool *out) {
     int tok = json_obj_get(call->doc, call->args, key);
     return tok >= 0 && json_get_bool(call->doc, tok, out);

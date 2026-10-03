@@ -1,6 +1,7 @@
 // Host-side stubs for the Switch-coupled modules (input, screen, app
 // metadata) so the MCP tools can be exercised end-to-end in tests.
 #include <switch.h>
+#include <stdio.h>
 #include <string.h>
 #include <strings.h>
 
@@ -62,14 +63,38 @@ Result input_touch_swipe(int from_x, int from_y, int to_x, int to_y,
     return 0;
 }
 
+char stub_typed[512];
+int stub_key_ms;
+
+Result input_type_text(const char *text, int key_ms) {
+    snprintf(stub_typed, sizeof(stub_typed), "%s", text);
+    stub_key_ms = key_ms;
+    return 0;
+}
+
 static const u8 kFakeJpeg[] = "FAKEJPEGDATA";
+
+// What the stub screen shows: frame i of stub_frames for the i-th capture,
+// the last one repeating. With no frames set, the fake bytes above.
+const u8 *stub_frames[4];
+size_t stub_frame_lens[4];
+int stub_nframes;
+int stub_captures;
 
 Result screen_capture_jpeg(ViLayerStack stack, u8 *buf, size_t buf_size, u64 *out_size) {
     (void)stack;
-    if (buf_size < sizeof(kFakeJpeg) - 1)
+    const u8 *src = kFakeJpeg;
+    size_t len = sizeof(kFakeJpeg) - 1;
+    if (stub_nframes > 0) {
+        int i = stub_captures < stub_nframes ? stub_captures : stub_nframes - 1;
+        src = stub_frames[i];
+        len = stub_frame_lens[i];
+    }
+    stub_captures++;
+    if (buf_size < len)
         return 1;
-    memcpy(buf, kFakeJpeg, sizeof(kFakeJpeg) - 1);
-    *out_size = sizeof(kFakeJpeg) - 1;
+    memcpy(buf, src, len);
+    *out_size = len;
     return 0;
 }
 

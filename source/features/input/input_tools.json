@@ -14,6 +14,16 @@
     "screenshotDelayMs": {
       "type": "integer",
       "description": "Delay before that screenshot in ms (lets the UI settle). Default 250."
+    },
+    "screenshotScale": {
+      "type": "number",
+      "enum": [
+        1,
+        0.5,
+        0.25,
+        0.125
+      ],
+      "description": "Scale of that screenshot: 0.5 gives 640x360, a quarter of the image cost. Default 1."
     }
   },
   "tools": [
@@ -35,6 +45,9 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         },
         "required": [
@@ -77,6 +90,9 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         },
         "required": [
@@ -98,6 +114,9 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         },
         "required": [
@@ -119,6 +138,9 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         },
         "required": [
@@ -154,6 +176,9 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         },
         "required": [
@@ -184,6 +209,9 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         },
         "required": [
@@ -223,6 +251,9 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         },
         "required": [
@@ -244,8 +275,40 @@
           },
           "screenshotDelayMs": {
             "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
           }
         }
+      }
+    },
+    {
+      "name": "type_text",
+      "description": "Type text on a virtual USB keyboard (US layout), e.g. into the system software keyboard once a text field has opened it, instead of picking letters with the D-pad. Supports printable ASCII plus \\n (Enter), \\t (Tab) and \\b (Backspace); anything else is rejected before typing starts. Software that ignores USB keyboards does not see it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to type, at most 256 characters."
+          },
+          "keyMs": {
+            "type": "integer",
+            "description": "How long each key is held, and the gap after it, in ms. Default 40."
+          },
+          "screenshot": {
+            "$ref": "#/$defs/screenshot"
+          },
+          "screenshotDelayMs": {
+            "$ref": "#/$defs/screenshotDelayMs"
+          },
+          "screenshotScale": {
+            "$ref": "#/$defs/screenshotScale"
+          }
+        },
+        "required": [
+          "text"
+        ]
       }
     }
   ]

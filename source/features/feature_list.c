@@ -17,6 +17,9 @@
 #include "features/settings/settings_http.h"
 #include "features/status/status_http.h"
 
+#ifdef FEATURE_CRASH
+#include "features/crash/crash_http.h"
+#endif
 #ifdef FEATURE_EXPLORER
 #include "features/explorer/explorer_http.h"
 #endif
@@ -26,6 +29,9 @@
 #endif
 #ifdef FEATURE_NETWORK
 #include "features/network/network_http.h"
+#endif
+#ifdef FEATURE_NRO
+#include "features/nro/nro_http.h"
 #endif
 #ifdef FEATURE_POWER
 #include "features/power/power_http.h"
@@ -47,8 +53,14 @@
 #include "features/screen/screen_mcp.h"
 #include "features/settings/settings_mcp.h"
 #include "features/status/status_mcp.h"
+#ifdef FEATURE_CRASH
+#include "features/crash/crash_mcp.h"
+#endif
 #ifdef FEATURE_NETWORK
 #include "features/network/network_mcp.h"
+#endif
+#ifdef FEATURE_NRO
+#include "features/nro/nro_mcp.h"
 #endif
 #ifdef FEATURE_POWER
 #include "features/power/power_mcp.h"
@@ -92,6 +104,9 @@ void features_register(const Config *cfg) {
     http_server_on_sleep(input_suspend);
 
     // --- optional ---
+#ifdef FEATURE_CRASH
+    crash_http_register();
+#endif
 #ifdef FEATURE_EXPLORER
     explorer_http_register();
 #endif
@@ -100,6 +115,9 @@ void features_register(const Config *cfg) {
 #endif
 #ifdef FEATURE_NETWORK
     network_http_register();
+#endif
+#ifdef FEATURE_NRO
+    nro_http_register();
 #endif
 #ifdef FEATURE_POWER
     power_http_register();
@@ -134,6 +152,12 @@ void features_register(const Config *cfg) {
 #endif
 #ifdef FEATURE_NETWORK
     network_mcp_register();
+#endif
+#ifdef FEATURE_NRO
+    nro_mcp_register();
+#endif
+#ifdef FEATURE_CRASH
+    crash_mcp_register();
 #endif
 #endif
 }

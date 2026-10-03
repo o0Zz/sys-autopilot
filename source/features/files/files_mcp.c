@@ -205,6 +205,44 @@ static void tool_hash_file(McpCall *call) {
     mcp_reply_text(call, msg);
 }
 
+static void tool_wait_for_file(McpCall *call) {
+    char fspath[768];
+    if (!get_path_arg(call, fspath, sizeof(fspath)))
+        return;
+    char contains[FILES_WAIT_MAX_NEEDLE + 1] = "";
+    int tok = json_obj_get(call->doc, call->args, "contains");
+    if (tok >= 0 && !mcp_arg_string(call, "contains", contains, sizeof(contains))) {
+        mcp_reply_error(call, "'contains' must be a string of at most 256 bytes");
+        return;
+    }
+    bool new_only = false;
+    mcp_arg_bool(call, "newOnly", &new_only);
+    int timeout = mcp_arg_int(call, "timeoutMs", FILES_WAIT_DEFAULT_TIMEOUT_MS);
+
+    char *buf = request_alloc(call->req, FILES_IO_BUF_SIZE);
+    if (!buf) {
+        mcp_reply_rpc_error(call, -32603, "out of request memory");
+        return;
+    }
+    FilesWait res;
+    files_wait(fspath, contains, new_only, timeout, buf, FILES_IO_BUF_SIZE, &res);
+
+    char msg[160];
+    if (res.met && contains[0])
+        snprintf(msg, sizeof(msg), "found after %d ms (file is %lld bytes)", res.elapsed_ms,
+                 res.size);
+    else if (res.met)
+        snprintf(msg, sizeof(msg), "file exists after %d ms (%lld bytes)", res.elapsed_ms,
+                 res.size);
+    else if (!res.exists)
+        snprintf(msg, sizeof(msg), "timed out after %d ms: the file does not exist",
+                 res.elapsed_ms);
+    else
+        snprintf(msg, sizeof(msg), "timed out after %d ms: text not found (file is %lld bytes)",
+                 res.elapsed_ms, res.size);
+    mcp_reply_text(call, msg);
+}
+
 void files_mcp_register(void) {
     mcp_server_register_tool(&kToolListDirectory, tool_list_directory);
     mcp_server_register_tool(&kToolReadFile,      tool_read_file);
@@ -212,4 +250,5 @@ void files_mcp_register(void) {
     mcp_server_register_tool(&kToolDeleteFile,    tool_delete_file);
     mcp_server_register_tool(&kToolMoveFile,      tool_move_file);
     mcp_server_register_tool(&kToolHashFile,      tool_hash_file);
+    mcp_server_register_tool(&kToolWaitForFile,   tool_wait_for_file);
 }

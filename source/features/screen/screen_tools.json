@@ -1,21 +1,112 @@
 {
+  "$defs": {
+    "stack": {
+      "type": "string",
+      "enum": [
+        "screenshot",
+        "default",
+        "lcd",
+        "recording",
+        "lastframe"
+      ],
+      "description": "Layer stack to capture. Default: screenshot (what the Capture button sees)."
+    }
+  },
   "tools": [
     {
       "name": "screenshot",
-      "description": "Capture the current Switch screen as a JPEG image (1280x720). Returns the image directly so you can see what is on screen.",
+      "description": "Capture the current Switch screen as a JPEG image (1280x720 at full scale). Returns the image directly so you can see what is on screen. Image cost grows with its pixel count, so prefer scale 0.5 (640x360) when you only need to see where you are, and crop to read small text at full resolution. Touch coordinates are always in the full 1280x720 space.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "stack": {
+            "$ref": "#/$defs/stack"
+          },
+          "scale": {
+            "type": "number",
+            "enum": [
+              1,
+              0.5,
+              0.25,
+              0.125
+            ],
+            "description": "Downscale factor applied after cropping. Default 1 (full size)."
+          },
+          "quality": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "JPEG quality when the image is re-encoded (any scale below 1, or a crop). Default 80."
+          },
+          "crop": {
+            "type": "object",
+            "description": "Region of the 1280x720 screen to return, in screen pixels.",
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              },
+              "width": {
+                "type": "integer"
+              },
+              "height": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "wait_for_screen",
+      "description": "Block until the screen changes (until=change, e.g. after launching something or pressing a button whose effect is delayed) or stops changing (until=stable, e.g. a loading screen or transition finishing), instead of polling with screenshots. Compares 160x90 grayscale thumbnails about five times a second. Returns how long it took, or that it timed out; optionally ends with a screenshot. Other requests to the console wait while this runs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "until": {
             "type": "string",
             "enum": [
-              "screenshot",
-              "default",
-              "lcd",
-              "recording",
-              "lastframe"
+              "change",
+              "stable"
             ],
-            "description": "Layer stack to capture. Default: screenshot (what the Capture button sees)."
+            "description": "Default change."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "description": "Give up after this long. Default 10000, max 30000."
+          },
+          "thresholdPercent": {
+            "type": "number",
+            "description": "Share of the screen that must differ to count as a change. Default 1 (a blinking cursor or a clock is usually less)."
+          },
+          "stableMs": {
+            "type": "integer",
+            "description": "until=stable: how long the screen must stay unchanged. Default 1000."
+          },
+          "stack": {
+            "$ref": "#/$defs/stack"
+          },
+          "screenshot": {
+            "type": "boolean",
+            "description": "If true, the result also includes a screenshot taken once the wait ends."
+          },
+          "screenshotScale": {
+            "type": "number",
+            "enum": [
+              1,
+              0.5,
+              0.25,
+              0.125
+            ],
+            "description": "Scale of that screenshot. Default 1."
           }
         }
       }

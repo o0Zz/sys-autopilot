@@ -30,6 +30,12 @@
 #include "features/oauth/oauth.h"
 #include "platform/power.h"
 #include "features/process/process.h"
+#include "features/crash/crash_http.h"
+#include "features/crash/crash_mcp.h"
+#include "features/screen/screen_http.h"
+#include "features/process/process_http.h"
+#include "util/jpeg.h"
+#include "jpeg_fixtures.h"
 
 extern uint64_t stub_tap_mask;
 extern int stub_tap_duration;
@@ -37,6 +43,12 @@ extern int stub_tap_count;
 extern int stub_touch_x, stub_touch_y, stub_touch_duration;
 extern int stub_swipe_from_x, stub_swipe_from_y, stub_swipe_to_x, stub_swipe_to_y;
 extern int stub_touch_count;
+extern const uint8_t *stub_frames[4];
+extern size_t stub_frame_lens[4];
+extern int stub_nframes;
+extern int stub_captures;
+extern char stub_typed[512];
+extern int stub_key_ms;
 
 static const Config kNoAuth;
 
@@ -120,6 +132,11 @@ static void test_tools_list(void) {
     assert(strstr(r, "\"hash_file\""));
     assert(strstr(r, "\"screenshot\""));
     assert(strstr(r, "\"inputSchema\""));
+    assert(strstr(r, "\"wait_for_screen\""));
+    assert(strstr(r, "\"wait_for_process\""));
+    assert(strstr(r, "\"wait_for_file\""));
+    assert(strstr(r, "\"type_text\""));
+    assert(strstr(r, "\"list_crash_reports\""));
     printf("tools/list ok\n");
 }
 
@@ -601,6 +618,313 @@ static void test_touch_tools(void) {
     printf("touch tools ok\n");
 }
 
+// --- screenshots, waits, typing, crash reports ----------------------------------
+
+// Issues one request with an optional body through the router; returns the
+// raw HTTP response.
+static const char *do_http(const char *method, const char *target, const char *body,
+                           size_t declared_len) {
+    static char resp[64 * 1024];
+    int sv[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    char req[4096];
+    size_t blen = body ? strlen(body) : 0;
+    int rn = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\nContent-Length: %zu\r\n\r\n%s",
+                      method, target, declared_len ? declared_len : blen, body ? body : "");
+    assert(rn > 0 && write(sv[1], req, (size_t)rn) == rn);
+    shutdown(sv[1], SHUT_WR);
+
+    static HttpRequest hreq;
+    assert(http_read_request(sv[0], &hreq));
+    http_server_dispatch(&kNoAuth, &hreq);
+    close(sv[0]);
+
+    size_t total = 0;
+    ssize_t n;
+    while ((n = read(sv[1], resp + total, sizeof(resp) - 1 - total)) > 0)
+        total += (size_t)n;
+    resp[total] = '\0';
+    close(sv[1]);
+    return resp;
+}
+
+static void set_frames(int n, const uint8_t *a, size_t alen, const uint8_t *b, size_t blen,
+                       const uint8_t *c, size_t clen) {
+    const uint8_t *f[3] = { a, b, c };
+    size_t l[3] = { alen, blen, clen };
+    for (int i = 0; i < n; i++) {
+        stub_frames[i] = f[i];
+        stub_frame_lens[i] = l[i];
+    }
+    stub_nframes = n;
+    stub_captures = 0;
+}
+
+// Decodes the (first) image of an MCP result and returns its dimensions.
+static void image_size(const char *r, int *w, int *h) {
+    const char *p = strstr(r, "\"data\":\"");
+    assert(p);
+    p += 8;
+    const char *e = strchr(p, '"');
+    assert(e);
+    static char b64[64 * 1024];
+    static uint8_t jpeg[48 * 1024];
+    assert((size_t)(e - p) < sizeof(b64));
+    memcpy(b64, p, (size_t)(e - p));
+    b64[e - p] = '\0';
+    size_t n = b64_decode(b64, (char *)jpeg, sizeof(jpeg));
+    assert(n > 0);
+    assert(jpeg_get_size(jpeg, n, w, h));
+}
+
+static void test_screenshot_scaled(void) {
+    set_frames(1, kC420, sizeof(kC420), NULL, 0, NULL, 0);
+    int w, h;
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":70,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"screenshot\",\"arguments\":{\"scale\":0.5}}}");
+    assert(strstr(r, "\"type\":\"image\""));
+    image_size(r, &w, &h);
+    assert(w == 24 && h == 20);
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":71,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"screenshot\",\"arguments\":"
+               "{\"scale\":0.5,\"crop\":{\"x\":8,\"y\":8,\"width\":16,\"height\":16}}}}");
+    image_size(r, &w, &h);
+    assert(w == 8 && h == 8);
+
+    // Quality alone re-encodes at full size.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":72,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"screenshot\",\"arguments\":{\"quality\":40}}}");
+    image_size(r, &w, &h);
+    assert(w == 48 && h == 40);
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":73,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"screenshot\",\"arguments\":{\"scale\":0.3}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "invalid scale"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":74,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"screenshot\",\"arguments\":{\"crop\":{\"x\":1}}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "crop"));
+
+    // Input tools take a scale for their trailing screenshot.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":75,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"tap_buttons\",\"arguments\":{\"buttons\":[\"A\"],"
+               "\"durationMs\":1,\"screenshot\":true,\"screenshotDelayMs\":0,"
+               "\"screenshotScale\":0.25}}}");
+    image_size(r, &w, &h);
+    assert(w == 12 && h == 10);
+
+    // REST: scaled JPEG, and a 400 for a bad crop.
+    r = do_http("GET", "/screenshot?scale=0.25&quality=70", NULL, 0);
+    assert(strncmp(r, "HTTP/1.1 200 OK", 15) == 0 && strstr(r, "Content-Type: image/jpeg"));
+    r = do_http("GET", "/screenshot?crop=1,2,3", NULL, 0);
+    assert(strncmp(r, "HTTP/1.1 400", 12) == 0 && strstr(r, "crop"));
+
+    stub_nframes = 0;
+    printf("scaled screenshots ok\n");
+}
+
+static void test_wait_for_screen(void) {
+    // Unchanged for two captures, then inverted.
+    set_frames(3, kC420, sizeof(kC420), kC420, sizeof(kC420), kInv, sizeof(kInv));
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":80,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"wait_for_screen\",\"arguments\":"
+                           "{\"timeoutMs\":5000}}}");
+    assert(strstr(r, "screen changed after"));
+    assert(stub_captures == 3);
+
+    set_frames(1, kC420, sizeof(kC420), NULL, 0, NULL, 0);
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":81,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_screen\",\"arguments\":{\"timeoutMs\":300}}}");
+    assert(strstr(r, "timed out after") && strstr(r, "did not change"));
+
+    // Settles after one change, and attaches a scaled screenshot.
+    set_frames(3, kC420, sizeof(kC420), kInv, sizeof(kInv), kInv, sizeof(kInv));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":82,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_screen\",\"arguments\":"
+               "{\"until\":\"stable\",\"stableMs\":300,\"timeoutMs\":5000,"
+               "\"screenshot\":true,\"screenshotScale\":0.5}}}");
+    assert(strstr(r, "screen stable after"));
+    int w, h;
+    image_size(r, &w, &h);
+    assert(w == 24 && h == 20);
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":83,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_screen\",\"arguments\":{\"until\":\"never\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+
+    set_frames(3, kC420, sizeof(kC420), kInv, sizeof(kInv), kInv, sizeof(kInv));
+    r = do_http("GET", "/wait/screen?timeoutMs=3000", NULL, 0);
+    assert(strstr(r, "\"met\":true"));
+
+    stub_nframes = 0;
+    printf("wait_for_screen ok\n");
+}
+
+static void test_wait_for_process(void) {
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":90,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"process_start\",\"arguments\":"
+                           "{\"titleId\":\"0100000000005678\"}}}");
+    assert(strstr(r, "launched"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":91,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_process\",\"arguments\":"
+               "{\"titleId\":\"0100000000005678\"}}}");
+    assert(strstr(r, "0100000000005678 is running"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":92,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_process\",\"arguments\":"
+               "{\"titleId\":\"0100000000005678\",\"state\":\"stopped\",\"timeoutMs\":250}}}");
+    assert(strstr(r, "timed out after") && strstr(r, "still running"));
+
+    r = do_http("GET", "/wait/process?titleId=0100000000005678&state=running", NULL, 0);
+    assert(strstr(r, "\"met\":true") && strstr(r, "\"running\":true"));
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":93,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"process_stop\",\"arguments\":"
+               "{\"titleId\":\"0100000000005678\"}}}");
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":94,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_process\",\"arguments\":"
+               "{\"titleId\":\"0100000000005678\",\"state\":\"stopped\"}}}");
+    assert(strstr(r, "is not running after"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":95,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_process\",\"arguments\":"
+               "{\"titleId\":\"0100000000005678\",\"state\":\"gone\"}}}");
+    assert(strstr(r, "\"isError\":true"));
+    printf("wait_for_process ok\n");
+}
+
+static void test_wait_for_file(void) {
+    system("rm -rf " FAKE_SD "/log && mkdir -p " FAKE_SD "/log");
+    FILE *f = fopen(FAKE_SD "/log/app.log", "wb");
+    assert(f);
+    fputs("booting\nREADY\n", f);
+    fclose(f);
+
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":100,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"wait_for_file\",\"arguments\":"
+                           "{\"path\":\"/log/app.log\",\"contains\":\"READY\"}}}");
+    assert(strstr(r, "found after"));
+    // Only text written after the call counts with newOnly.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":101,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_file\",\"arguments\":"
+               "{\"path\":\"/log/app.log\",\"contains\":\"READY\",\"newOnly\":true,"
+               "\"timeoutMs\":250}}}");
+    assert(strstr(r, "timed out after") && strstr(r, "text not found"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":102,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_file\",\"arguments\":"
+               "{\"path\":\"/log/none.log\",\"timeoutMs\":200}}}");
+    assert(strstr(r, "the file does not exist"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":103,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"wait_for_file\",\"arguments\":{\"path\":\"/log/app.log\"}}}");
+    assert(strstr(r, "file exists after"));
+
+    r = do_http("GET", "/wait/file?path=/log/app.log&contains=READY", NULL, 0);
+    assert(strstr(r, "\"met\":true") && strstr(r, "\"exists\":true"));
+    r = do_http("GET", "/wait/file?path=/log/app.log&contains=NOPE&timeoutMs=200", NULL, 0);
+    assert(strstr(r, "\"met\":false"));
+    printf("wait_for_file ok\n");
+}
+
+static void test_type_text(void) {
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":110,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"type_text\",\"arguments\":"
+                           "{\"text\":\"Hi! a_b\\n\",\"keyMs\":5}}}");
+    assert(strstr(r, "\"isError\":false") && strstr(r, "typed"));
+    assert(strcmp(stub_typed, "Hi! a_b\n") == 0 && stub_key_ms == 5);
+
+    stub_typed[0] = '\0';
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":111,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"type_text\",\"arguments\":{\"text\":\"caf\\u00e9\"}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "cannot be typed"));
+    assert(stub_typed[0] == '\0');
+    printf("type_text ok\n");
+}
+
+static void test_crash_reports(void) {
+    system("rm -rf " FAKE_SD "/atmosphere && mkdir -p " FAKE_SD "/atmosphere/crash_reports "
+           FAKE_SD "/atmosphere/fatal_reports");
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":120,\"method\":\"tools/call\","
+                           "\"params\":{\"name\":\"list_crash_reports\",\"arguments\":{}}}");
+    assert(strstr(r, "no crash or fatal reports"));
+
+    FILE *f = fopen(FAKE_SD "/atmosphere/crash_reports/01759500000_0100000000001000.log", "wb");
+    assert(f);
+    fputs("Atmosph\xc3\xa8re Crash Report (v1.7):\n"
+          "Result:                          0x2A8 (2162-0001)\n\n"
+          "Process Info:\n"
+          "    Process Name:                qlaunch\n"
+          "    Program ID:                  0100000000001000\n", f);
+    fclose(f);
+    f = fopen(FAKE_SD "/atmosphere/crash_reports/01759500000_0100000000001000.jpg", "wb");
+    assert(f);
+    fclose(f);
+    f = fopen(FAKE_SD "/atmosphere/fatal_reports/01759400000_010000000000000c.log", "wb");
+    assert(f);
+    fputs("Atmosph\xc3\xa8re Fatal Report (v1.1):\n"
+          "Result:                          0x1234 (2052-0009)\n\n"
+          "Program ID:                      010000000000000c\n"
+          "Process Name:                    nifm\n", f);
+    fclose(f);
+    f = fopen(FAKE_SD "/atmosphere/crash_reports/notes.txt", "wb");
+    assert(f);
+    fclose(f);
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":121,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"list_crash_reports\",\"arguments\":{}}}");
+    const char *crash = strstr(r, "2025-10-03 14:00:00 UTC  crash  0100000000001000 (qlaunch)  "
+                                  "0x2A8 (2162-0001)");
+    const char *fatal = strstr(r, "2025-10-02 10:13:20 UTC  fatal  010000000000000c (nifm)  "
+                                  "0x1234 (2052-0009)");
+    assert(crash && fatal && crash < fatal); // newest first
+    assert(strstr(r, "[+ .jpg screenshot]"));
+    assert(!strstr(r, "notes.txt"));
+
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":122,\"method\":\"tools/call\","
+               "\"params\":{\"name\":\"list_crash_reports\",\"arguments\":{\"limit\":1}}}");
+    assert(strstr(r, "qlaunch") && !strstr(r, "nifm"));
+
+    r = do_http("GET", "/crash-reports", NULL, 0);
+    assert(strstr(r, "\"kind\":\"crash\"") && strstr(r, "\"kind\":\"fatal\""));
+    assert(strstr(r, "\"titleId\":\"0100000000001000\",\"processName\":\"qlaunch\","
+                     "\"result\":\"0x2A8 (2162-0001)\""));
+    assert(strstr(r, "\"screenshot\":true"));
+    r = do_http("GET", "/crash-reports?limit=0", NULL, 0);
+    assert(strncmp(r, "HTTP/1.1 400", 12) == 0);
+    printf("crash reports ok\n");
+}
+
+// The REST fixes: escaped paths, uploads that never clobber the target, and
+// reason phrases.
+static void test_rest_fixes(void) {
+    system("rm -rf " FAKE_SD "/rest && mkdir -p " FAKE_SD "/rest");
+    const char *r = do_http("PUT", "/files?path=/rest/a%22b.txt", "first", 0);
+    assert(strncmp(r, "HTTP/1.1 201 Created", 20) == 0);
+    assert(strstr(r, "\"path\":\"/rest/a\\\"b.txt\""));
+
+    // A body cut short leaves the existing file as it was, and no temp file.
+    r = do_http("PUT", "/files?path=/rest/a%22b.txt", "sec", 100);
+    assert(strncmp(r, "HTTP/1.1 400", 12) == 0 && strstr(r, "incomplete upload"));
+    FILE *f = fopen(FAKE_SD "/rest/a\"b.txt", "rb");
+    assert(f);
+    char buf[16] = {0};
+    assert(fread(buf, 1, sizeof(buf), f) == 5 && memcmp(buf, "first", 5) == 0);
+    fclose(f);
+    struct stat st;
+    assert(stat(FAKE_SD "/rest/a\"b.txt" FILES_UPLOAD_SUFFIX, &st) != 0);
+
+    // A complete upload replaces it.
+    r = do_http("PUT", "/files?path=/rest/a%22b.txt", "second", 0);
+    assert(strncmp(r, "HTTP/1.1 201", 12) == 0);
+    f = fopen(FAKE_SD "/rest/a\"b.txt", "rb");
+    assert(f && fread(buf, 1, sizeof(buf), f) == 6 && memcmp(buf, "second", 6) == 0);
+    fclose(f);
+
+    do_http("PUT", "/files?path=/rest/c.txt", "c", 0);
+    r = do_http("POST", "/files/move?path=/rest/c.txt&to=/rest/a%22b.txt", NULL, 0);
+    assert(strncmp(r, "HTTP/1.1 409 Conflict", 21) == 0);
+    r = do_http("DELETE", "/files?path=/rest/a%22b.txt", NULL, 0);
+    assert(strstr(r, "\"deleted\":\"/rest/a\\\"b.txt\""));
+    printf("rest fixes ok\n");
+}
+
 static Config g_cfg_for_oauth;
 
 int main(void) {
@@ -621,6 +945,10 @@ int main(void) {
     settings_mcp_register();
     titles_mcp_register();
     network_mcp_register();
+    crash_mcp_register();
+    crash_http_register();
+    screen_http_register();
+    process_http_register();
 
     test_initialize();
     test_notification();
@@ -638,6 +966,13 @@ int main(void) {
     test_process_tools();
     test_touch_tools();
     test_move_file_tool();
+    test_screenshot_scaled();
+    test_wait_for_screen();
+    test_wait_for_process();
+    test_wait_for_file();
+    test_type_text();
+    test_crash_reports();
+    test_rest_fixes();
     printf("all mcp tests passed\n");
     return 0;
 }

@@ -1,0 +1,27 @@
+{
+  "tools": [
+    {
+      "name": "launch_nro",
+      "description": "Start a homebrew .nro from the SD card without navigating the Homebrew Menu. Needs hbmenu open with its netloader running: open the Homebrew Menu and press Y once (the screen says it is waiting for nxlink); the call fails with that instruction otherwise. hbmenu then exits and starts the NRO, exactly like nxlink from a PC. The NRO must be under /switch/. Upload a new build first (PUT /files or upload_file), then call this.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The NRO on the SD card, under /switch/, e.g. /switch/myapp/myapp.nro."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Command-line arguments after argv[0]. At most 1 KB in all."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  ]
+}

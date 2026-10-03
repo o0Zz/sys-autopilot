@@ -13,6 +13,10 @@
 // Size of the read/write buffer the front-ends take from request memory.
 #define FILES_IO_BUF_SIZE 0x8000
 
+// PUT /files streams into "<path>" FILES_UPLOAD_SUFFIX and renames it over
+// the target once complete.
+#define FILES_UPLOAD_SUFFIX ".upload"
+
 // Resolves a user path ("/switch/foo") into FILES_ROOT-prefixed fspath.
 // Rejects relative paths and ".." traversal; *err receives a message.
 bool files_resolve(const char *userpath, char *out, size_t outsz, const char **err);
@@ -40,6 +44,27 @@ bool files_delete_path(const char *fspath, const char **err);
 // Refuses to overwrite an existing destination. Returns true on success,
 // *err on failure.
 bool files_move_path(const char *src, const char *dst, const char **err);
+
+// --- waiting for a file ----------------------------------------------------------
+
+#define FILES_WAIT_DEFAULT_TIMEOUT_MS 10000
+#define FILES_WAIT_MAX_NEEDLE 256
+
+typedef struct {
+    bool met;       // false: timed out
+    bool exists;    // the file existed at the last check
+    int elapsed_ms;
+    long long size; // its size then
+} FilesWait;
+
+// Waits (at most HTTP_MAX_WAIT_MS) until fspath exists and, when `contains`
+// is not empty, holds that text. With new_only, only text added after the
+// wait began counts: the way to wait for a fresh line in a log that already
+// holds older runs. A file that shrinks is taken as rewritten and searched
+// again from its start. buf is scratch for reading (FILES_IO_BUF_SIZE bytes is
+// plenty).
+void files_wait(const char *fspath, const char *contains, bool new_only, int timeout_ms,
+                char *buf, size_t bufsz, FilesWait *res);
 
 // Computes the SHA-256 of a regular file, streamed through the caller's
 // buffer (so memory use is constant regardless of file size). On success

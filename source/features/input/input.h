@@ -43,3 +43,11 @@ Result input_stick(int side, float x, float y, int duration_ms);
 Result input_touch_tap(int x, int y, int duration_ms);
 Result input_touch_swipe(int from_x, int from_y, int to_x, int to_y,
                          int duration_ms);
+
+// Types text on a virtual USB keyboard (US layout, see keyboard.h), holding
+// each key key_ms then releasing it for key_ms. Only software that reads the
+// USB keyboard sees it (the system's software keyboard accepts one).
+// Characters keyboard_map_char() rejects are skipped; check with
+// keyboard_find_unsupported() first.
+#define INPUT_DEFAULT_KEY_MS 40
+Result input_type_text(const char *text, int key_ms);

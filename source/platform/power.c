@@ -25,6 +25,9 @@ PowerAction power_take_scheduled(void) {
 static PscPmModule g_module;
 static PscPmState g_pending_state;
 static bool g_initialized;
+// A request power_sleep_requested() has read but power_poll() not yet
+// returned.
+static PowerEvent g_deferred = PowerEvent_None;
 
 bool power_init(void) {
     Result rc = pscmInitialize();
@@ -50,7 +53,7 @@ bool power_init(void) {
     return true;
 }
 
-PowerEvent power_poll(void) {
+static PowerEvent poll_psc(void) {
     if (!g_initialized)
         return PowerEvent_None;
 
@@ -73,6 +76,21 @@ PowerEvent power_poll(void) {
         default:
             return PowerEvent_Wake;
     }
+}
+
+PowerEvent power_poll(void) {
+    if (g_deferred != PowerEvent_None) {
+        PowerEvent e = g_deferred;
+        g_deferred = PowerEvent_None;
+        return e;
+    }
+    return poll_psc();
+}
+
+bool power_sleep_requested(void) {
+    if (g_deferred == PowerEvent_None)
+        g_deferred = poll_psc();
+    return g_deferred == PowerEvent_Sleep;
 }
 
 void power_ack(void) {

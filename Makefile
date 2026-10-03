@@ -29,7 +29,7 @@ INCLUDES	:=	lib/jsmn source
 # in, keyed on the FEATURE_<NAME> define each one gets. Run `make clean` when
 # changing it.
 BASE_FEATURES	:=	status screen input files settings
-FEATURES	?=	explorer install network power process titles
+FEATURES	?=	crash explorer install network nro power process titles
 
 # MCP=0 leaves out the MCP endpoint, the OAuth login that exists for MCP
 # clients, and every feature's *_mcp.c, for a smaller binary and less resident

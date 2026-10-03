@@ -49,7 +49,7 @@ static void handle_nickname(HttpRequest *req) {
             http_send_error(req->fd, 500, "failed to read nickname");
             return;
         }
-        http_send_json(req->fd, 200, "{\"nickname\":\"%s\"}", name);
+        http_send_json(req->fd, 200, "{\"nickname\":\"%s\"}", request_json_escape(req, name));
         return;
     }
     JsonDoc *doc = request_read_json(req);
@@ -63,7 +63,8 @@ static void handle_nickname(HttpRequest *req) {
     if (!settings_set_nickname(name))
         http_send_error(req->fd, 500, "failed to set nickname");
     else
-        http_send_json(req->fd, 200, "{\"ok\":true,\"nickname\":\"%s\"}", name);
+        http_send_json(req->fd, 200, "{\"ok\":true,\"nickname\":\"%s\"}",
+                       request_json_escape(req, name));
 }
 
 // Shared get/set for the two normalized 0..1 float settings.

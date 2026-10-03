@@ -117,6 +117,34 @@
           "path"
         ]
       }
+    },
+    {
+      "name": "wait_for_file",
+      "description": "Block until a file exists, or until it contains some text: a log line your app prints when it is ready, has crashed, or has finished a test. With newOnly, only text written after the call counts, so an older run's lines in the same log do not match. Returns as soon as the condition holds, or reports a timeout. Other requests to the console wait while this runs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path on the SD card, e.g. /switch/myapp/log.txt."
+          },
+          "contains": {
+            "type": "string",
+            "description": "Text to wait for (exact, case-sensitive, at most 256 bytes). Omit to wait for the file to exist."
+          },
+          "newOnly": {
+            "type": "boolean",
+            "description": "Only match text added after this call started. Default false."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "description": "Give up after this long. Default 10000, max 30000."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
     }
   ]
 }

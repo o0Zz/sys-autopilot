@@ -4,6 +4,7 @@
 #include "features/process/process.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Title ids are 16 hex digits, matching the form /titles reports them in. They
@@ -153,10 +154,36 @@ static void post_restart(HttpRequest *req) {
                    (unsigned long long)tid, (unsigned long long)pid);
 }
 
+// GET /wait/process?titleId=T&state=running|stopped&timeoutMs=N
+static void get_wait(HttpRequest *req) {
+    uint64_t tid;
+    if (!arg_title_id(req, &tid))
+        return;
+    char val[16] = "running";
+    http_query_get(req, "state", val, sizeof(val));
+    bool want_running = strcmp(val, "running") == 0;
+    if (!want_running && strcmp(val, "stopped") != 0) {
+        http_send_error(req->fd, 400, "invalid 'state' (running or stopped)");
+        return;
+    }
+    int timeout = PROCESS_WAIT_DEFAULT_TIMEOUT_MS;
+    if (http_query_get(req, "timeoutMs", val, sizeof(val)))
+        timeout = atoi(val);
+
+    ProcessStatus st;
+    int elapsed = 0;
+    bool met = process_wait(tid, want_running, timeout, &st, &elapsed);
+    http_send_json(req->fd, 200,
+                   "{\"met\":%s,\"elapsedMs\":%d,\"titleId\":\"%016llx\",\"running\":%s,\"pid\":\"%llu\"}",
+                   met ? "true" : "false", elapsed, (unsigned long long)tid,
+                   st.running ? "true" : "false", (unsigned long long)st.pid);
+}
+
 void process_http_register(void) {
     http_server_register_route("GET",  "/process",         get_status);
     http_server_register_route("GET",  "/process/list",    get_list);
     http_server_register_route("POST", "/process/start",   post_start);
     http_server_register_route("POST", "/process/stop",    post_stop);
     http_server_register_route("POST", "/process/restart", post_restart);
+    http_server_register_route("GET",  "/wait/process",    get_wait);
 }

@@ -1,5 +1,6 @@
 #include "features/input/input.h"
 #include "features/input/buttons.h"
+#include "features/input/keyboard.h"
 #include "core/log.h"
 
 #include <assert.h>
@@ -311,5 +312,48 @@ Result input_touch_swipe(int from_x, int from_y, int to_x, int to_y,
         sleep_ms(TOUCH_FRAME_MS);
     }
     touch_release();
+    return rc;
+}
+
+// --- keyboard ----------------------------------------------------------------
+//
+// Like the touch panel, the keyboard goes through hiddbg's autopilot: the
+// state we set replaces the USB keyboard's in hid's sampler, which is what
+// the software keyboard reads. Each character is a press then a release, so
+// a repeated letter registers twice, and the override is always unset again
+// so a real keyboard works afterwards.
+
+static void key_state(HiddbgKeyboardAutoPilotState *st, uint8_t usage, bool shift) {
+    memset(st, 0, sizeof(*st));
+    if (shift) {
+        st->modifiers = HidKeyboardModifier_Shift;
+        st->keys[KEY_USAGE_LEFT_SHIFT / 64] |= 1ULL << (KEY_USAGE_LEFT_SHIFT % 64);
+    }
+    if (usage)
+        st->keys[usage / 64] |= 1ULL << (usage % 64);
+}
+
+Result input_type_text(const char *text, int key_ms) {
+    if (key_ms < 1) key_ms = 1;
+    if (key_ms > 500) key_ms = 500;
+    Result rc = 0;
+    HiddbgKeyboardAutoPilotState st;
+    for (const char *p = text; *p && R_SUCCEEDED(rc); p++) {
+        uint8_t usage;
+        bool shift;
+        if (!keyboard_map_char(*p, &usage, &shift))
+            continue; // callers reject these up front
+        key_state(&st, usage, shift);
+        rc = hiddbgSetKeyboardAutoPilotState(&st);
+        sleep_ms(key_ms);
+        if (R_SUCCEEDED(rc)) {
+            key_state(&st, 0, false);
+            rc = hiddbgSetKeyboardAutoPilotState(&st);
+            sleep_ms(key_ms);
+        }
+    }
+    if (R_FAILED(rc))
+        LOGE("input", "hiddbgSetKeyboardAutoPilotState failed rc=0x%x", rc);
+    hiddbgUnsetKeyboardAutoPilotState();
     return rc;
 }

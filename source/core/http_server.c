@@ -179,6 +179,36 @@ static void handle_connection(int fd, const Config *cfg) {
     }
 }
 
+// Keep-awake ping deadline, shared by the loop and the idle hook. Measured on
+// the system tick rather than loop iterations: an iteration is ~100ms only
+// when poll() times out, and stretches to seconds while a request is served
+// or a failed bind is retried, so a tick count is not a clock. 0 means "ping
+// now", so the first ping goes out before the console has had time to idle
+// out.
+static u64 g_keepawake_next;
+static const Config *g_server_cfg;
+
+static void keepawake_maybe(void) {
+    if (!g_server_cfg || !g_server_cfg->keep_awake)
+        return;
+    u64 now = armGetSystemTick();
+    if (now >= g_keepawake_next) {
+        g_keepawake_next = now + armNsToTicks(KEEPAWAKE_INTERVAL_NS);
+        power_keepawake_tick();
+    }
+}
+
+// Idle hook for handlers that wait: keep the console awake, but give up as
+// soon as it wants to sleep.
+static bool wait_idle(void) {
+    if (power_sleep_requested()) {
+        LOGI("server", "sleep requested; ending a wait early");
+        return false;
+    }
+    keepawake_maybe();
+    return true;
+}
+
 // Delay before retrying a failed bind/listen or a broken poll.
 #define RETRY_WAIT_NS 1000000000LL // 1s
 
@@ -206,12 +236,9 @@ void http_server_run(const Config *cfg) {
     // missed entirely). The loop spins ~every 100ms; check every ~2s.
     int netcheck_ticks = 0;
 
-    // Keep-awake ping deadline. Measured on the system tick rather than loop
-    // iterations: an iteration is ~100ms only when poll() times out, and
-    // stretches to seconds while a request is served or a failed bind is
-    // retried, so a tick count is not a clock. 0 means "ping now", so the
-    // first ping goes out before the console has had time to idle out.
-    u64 keepawake_next = 0;
+    // A handler blocked in a wait tool keeps pinging through the idle hook.
+    g_server_cfg = cfg;
+    http_server_set_idle_hook(wait_idle);
 
     for (;;) {
         // Participate in sleep/wake transitions: all sockets must be closed
@@ -250,7 +277,7 @@ void http_server_run(const Config *cfg) {
             LOGI("power", "awake");
             // Wake lands back on the lock screen and its short idle policy
             // starts running immediately: ping on the very next iteration.
-            keepawake_next = 0;
+            g_keepawake_next = 0;
         }
         if (suspended) {
             svcSleepThread(100000000LL); // 100ms between power_poll checks
@@ -267,13 +294,7 @@ void http_server_run(const Config *cfg) {
         // lock screen ("press A three times", shown after boot and after every
         // wake) runs its own ~10s policy, so a 30s ping never landed inside it
         // and the console dropped straight back to sleep.
-        if (cfg->keep_awake) {
-            u64 now = armGetSystemTick();
-            if (now >= keepawake_next) {
-                keepawake_next = now + armNsToTicks(KEEPAWAKE_INTERVAL_NS);
-                power_keepawake_tick();
-            }
-        }
+        keepawake_maybe();
 
         // React to network connectivity changes (wifi connect/disconnect,
         // airplane mode, DHCP renewal) by polling nifm for our current IP every

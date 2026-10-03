@@ -31,7 +31,7 @@ typedef struct {
 typedef void (*McpToolHandler)(McpCall *call);
 
 // Capacity of the tool table; registration fails (and logs) past it.
-#define MCP_MAX_TOOLS 48 // a full build registers 42
+#define MCP_MAX_TOOLS 64 // a full build registers 48
 
 // Registers the POST/GET /mcp routes and the "path=/mcp" mDNS TXT entry.
 void mcp_server_http_register(void);
@@ -60,6 +60,9 @@ int mcp_arg_int(const McpCall *call, const char *key, int fallback);
 
 // String argument `key`. False when absent, not a string, or too long.
 bool mcp_arg_string(const McpCall *call, const char *key, char *out, size_t outsz);
+
+// Number argument `key` (integer or not). False when absent or not a number.
+bool mcp_arg_double(const McpCall *call, const char *key, double *out);
 
 // Boolean argument `key`. False when absent or not a boolean.
 bool mcp_arg_bool(const McpCall *call, const char *key, bool *out);

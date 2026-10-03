@@ -65,3 +65,11 @@ bool process_restart(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc);
 // Parses a program id: 16 hex digits, optionally "0x"-prefixed, the form
 // /titles reports. Returns false on anything else.
 bool process_parse_title_id(const char *s, uint64_t *out);
+
+#define PROCESS_WAIT_DEFAULT_TIMEOUT_MS 10000
+
+// Waits (at most HTTP_MAX_WAIT_MS) until the program is running, or gone when
+// want_running is false. True when that state was reached, false on timeout;
+// either way *out holds the last status and *elapsed_ms the time waited.
+bool process_wait(uint64_t program_id, bool want_running, int timeout_ms, ProcessStatus *out,
+                  int *elapsed_ms);
