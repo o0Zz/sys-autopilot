@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-static const char *kTarget[3] = { "params", "arguments", "content" };
+static const char kTarget[3][10] = { "params", "arguments", "content" };
 static const char kPlaceholder[] = "\"<streamed>\"";
 
 void jstream_init(Jstream *js, char *doc_buf, size_t doc_cap,

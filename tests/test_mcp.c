@@ -140,6 +140,14 @@ static void test_tools_list(void) {
     assert(strstr(r, "\"wait_for_file\""));
     assert(strstr(r, "\"type_text\""));
     assert(strstr(r, "\"list_crash_reports\""));
+    // Shared $def text is expanded in place (no marker byte is left) and
+    // counted in Content-Length.
+    assert(strstr(r, "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"buttons\":{"));
+    const char *body = strstr(r, "\r\n\r\n") + 4;
+    const char *clen = strstr(r, "Content-Length: ");
+    assert(clen && (size_t)atoi(clen + 16) == strlen(body));
+    for (const char *p = body; *p; p++)
+        assert((unsigned char)*p >= 0x20);
     printf("tools/list ok\n");
 }
 

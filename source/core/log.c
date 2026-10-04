@@ -5,16 +5,6 @@
 
 #define LOG_MODULE_WIDTH 8
 
-// newlib's integer-only printf variants: log lines never print floats, and
-// the float-capable vsnprintf costs ~15K of code.
-#ifdef __SWITCH__
-#define LOG_VSNPRINTF vsniprintf
-#define LOG_SNPRINTF  sniprintf
-#else
-#define LOG_VSNPRINTF vsnprintf
-#define LOG_SNPRINTF  snprintf
-#endif
-
 static const char kLevelChar[] = {'D', 'I', 'W', 'E'};
 
 size_t log_format_line(char *out, size_t size, LogLevel level, const char *module,
@@ -25,7 +15,7 @@ size_t log_format_line(char *out, size_t size, LogLevel level, const char *modul
     // the message is cut.
     size_t room = size - 1;
     char lvl = (unsigned)level < sizeof(kLevelChar) ? kLevelChar[level] : '?';
-    int n = LOG_SNPRINTF(out, room, "|%c|%04d-%02d-%02d %02d:%02d:%02d.%03d|%-*.*s| ",
+    int n = snprintf(out, room, "|%c|%04d-%02d-%02d %02d:%02d:%02d.%03d|%-*.*s| ",
                          lvl, tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                          tm->tm_hour, tm->tm_min, tm->tm_sec, ms,
                          LOG_MODULE_WIDTH, LOG_MODULE_WIDTH, module ? module : "");
@@ -33,7 +23,7 @@ size_t log_format_line(char *out, size_t size, LogLevel level, const char *modul
     if (len < room - 1) {
         // vsnprintf returns the length it would have written, not what it
         // wrote: clamp to what is actually in the buffer.
-        n = LOG_VSNPRINTF(out + len, room - len, fmt, ap);
+        n = vsnprintf(out + len, room - len, fmt, ap);
         if (n > 0)
             len += (size_t)n < room - len ? (size_t)n : room - len - 1;
     }

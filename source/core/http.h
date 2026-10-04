@@ -9,10 +9,11 @@
 typedef struct {
     int    fd;
     char   method[8];
-    char   path[512];
-    char   query[2048];
-    char   host[128];           // Value of the Host header ("" if absent)
-    char   auth[256];           // Value of the Authorization header ("" if absent)
+    // These point into buf, cut at the lengths noted.
+    const char *path;           // URL-decoded, at most 511 chars
+    const char *query;          // at most 2047 chars ("" if absent)
+    const char *host;           // Host header, at most 127 chars ("" if absent)
+    const char *auth;           // Authorization header, at most 255 chars ("" if absent)
     size_t content_length;
     bool   has_content_length;
     bool   expect_100;          // Client sent "Expect: 100-continue"

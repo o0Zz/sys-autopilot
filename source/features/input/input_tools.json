@@ -29,7 +29,7 @@
   "tools": [
     {
       "name": "tap_buttons",
-      "description": "Press and release controller buttons (synchronous). A virtual Pro Controller is attached automatically. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.",
+      "description": "Press and release controller buttons (synchronous). A virtual Pro Controller is attached automatically.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -57,7 +57,7 @@
     },
     {
       "name": "tap_sequence",
-      "description": "Perform a sequence of button taps in one call, e.g. to navigate menus. Each step presses its buttons, holds, releases, then waits before the next step. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.",
+      "description": "Perform a sequence of button taps in one call, e.g. to navigate menus. Each step presses its buttons, holds, releases, then waits before the next step.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -102,7 +102,7 @@
     },
     {
       "name": "hold_buttons",
-      "description": "Press buttons and keep them held until release_buttons or clear_input. Button names: A, B, X, Y, L, R, ZL, ZR, PLUS, MINUS, UP, DOWN, LEFT, RIGHT, LSTICK, RSTICK, HOME, CAPTURE.",
+      "description": "Press buttons and keep them held until release_buttons or clear_input.",
       "inputSchema": {
         "type": "object",
         "properties": {

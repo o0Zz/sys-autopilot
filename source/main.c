@@ -9,9 +9,9 @@
 #include "platform/netif.h"
 #include "platform/power.h"
 
-// Inner heap: socket transfer memory + stdio buffers + dir listing JSON +
-// headroom for the title installer (ncm IPC, mounting the cnmt NCA). The large
-// transient buffers (JPEG, I/O, installer, title listing) live in request
+// Inner heap: socket transfer memory + stdio buffers + headroom for the title
+// installer (ncm IPC, mounting the cnmt NCA). The large transient buffers
+// (JPEG, I/O, installer, title and directory listings) live in request
 // memory (core/request.h), not here; GET /status reports how much of this
 // heap is actually used.
 #define INNER_HEAP_SIZE 0x100000

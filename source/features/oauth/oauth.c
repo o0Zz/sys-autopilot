@@ -127,7 +127,16 @@ static char *read_small_body(HttpRequest *req, size_t cap) {
 
 // --- persisted token store -------------------------------------------------------
 
-static char g_tokens[MAX_TOKENS][TOKEN_HEX_LEN + 1];
+// Constant-time comparison of two SHA-256 digests.
+static bool digest_eq(const uint8_t a[32], const uint8_t b[32]) {
+    uint8_t diff = 0;
+    for (int i = 0; i < 32; i++)
+        diff |= a[i] ^ b[i];
+    return diff == 0;
+}
+
+// Tokens are held as SHA-256 digests; the plain text lives only in tokens.txt.
+static uint8_t g_tokens[MAX_TOKENS][32];
 static int g_token_count;
 static time_t g_tokens_mtime;
 
@@ -156,9 +165,7 @@ static void tokens_load(void) {
         size_t len = line_token(line, &tok);
         if (len < 16 || len > TOKEN_HEX_LEN)
             continue;
-        memcpy(g_tokens[g_token_count], tok, len);
-        g_tokens[g_token_count][len] = '\0';
-        g_token_count++;
+        sha256_hash(g_tokens[g_token_count++], tok, len);
     }
     fclose(f);
     LOGI("oauth", "loaded %d token(s)", g_token_count);
@@ -201,16 +208,22 @@ static bool tokens_append(const char *token, const char *note) {
     if (stat(OAUTH_TOKENS_PATH, &st) == 0)
         g_tokens_mtime = st.st_mtime;
     if (g_token_count < MAX_TOKENS)
-        snprintf(g_tokens[g_token_count++], TOKEN_HEX_LEN + 1, "%s", token);
+        sha256_hash(g_tokens[g_token_count++], token, strlen(token));
     return true;
 }
 
 bool oauth_token_valid(const char *token) {
     tokens_refresh();
+    // Same length rule as tokens_load(), so no out-of-range token can match.
+    size_t len = strlen(token);
+    if (len < 16 || len > TOKEN_HEX_LEN)
+        return false;
+    uint8_t digest[32];
+    sha256_hash(digest, token, len);
     bool ok = false;
     for (int i = 0; i < g_token_count; i++) {
         // Check every entry (no early exit) to keep timing uniform.
-        if (http_secure_streq(token, g_tokens[i]))
+        if (digest_eq(digest, g_tokens[i]))
             ok = true;
     }
     return ok;
@@ -270,7 +283,7 @@ typedef struct {
     // PKCE S256 code_challenge: 43 base64url chars. A longer one is stored
     // truncated, which is harmless: it can never match the 43-char digest.
     char challenge[48];
-    char redirect_uri[512];
+    uint8_t redirect_hash[32]; // SHA-256 of the authorization redirect_uri
     uint64_t expires_at;    // now_secs() deadline; 0 = slot free
 } AuthCode;
 
@@ -293,7 +306,7 @@ static AuthCode *code_create(const char *challenge, const char *redirect_uri) {
     hex_encode(rnd, sizeof(rnd), slot->code);
     snprintf(slot->challenge, sizeof(slot->challenge), "%.*s",
              (int)sizeof(slot->challenge) - 1, challenge);
-    snprintf(slot->redirect_uri, sizeof(slot->redirect_uri), "%s", redirect_uri);
+    sha256_hash(slot->redirect_hash, redirect_uri, strlen(redirect_uri));
     slot->expires_at = now + CODE_LIFETIME_SECS;
     return slot;
 }
@@ -606,13 +619,16 @@ static void handle_token(HttpRequest *req) {
     }
 
     // redirect_uri must match the authorization request when provided.
-    if (redirect_uri[0] != '\0' && strcmp(redirect_uri, entry->redirect_uri) != 0) {
-        send_oauth_error(req->fd, 400, "invalid_grant", "redirect_uri mismatch");
-        return;
+    uint8_t digest[32];
+    if (redirect_uri[0] != '\0') {
+        sha256_hash(digest, redirect_uri, strlen(redirect_uri));
+        if (!digest_eq(digest, entry->redirect_hash)) {
+            send_oauth_error(req->fd, 400, "invalid_grant", "redirect_uri mismatch");
+            return;
+        }
     }
 
     // PKCE S256: base64url(SHA256(verifier)) must equal the stored challenge.
-    uint8_t digest[32];
     sha256_hash(digest, verifier, strlen(verifier));
     char computed[48];
     b64url_encode(digest, sizeof(digest), computed);

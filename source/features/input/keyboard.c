@@ -73,15 +73,16 @@ static const KeyEntry kFr[] = {
 #undef G
 
 static const char *keyboard_layout_name(int layout) {
-    static const char *const kNames[] = {
-        "Japanese", "English (US)", "English (US, international)", "English (UK)",
-        "French", "French (Canada)", "Spanish", "Spanish (Latin America)", "German",
-        "Italian", "Portuguese", "Russian", "Korean", "Chinese (simplified)",
-        "Chinese (traditional)",
-    };
-    if (layout < 0 || layout >= (int)(sizeof(kNames) / sizeof(kNames[0])))
-        return "unknown";
-    return kNames[layout];
+    // NUL-separated, in layout order; an empty name ends the list.
+    static const char kNames[] =
+        "Japanese\0English (US)\0English (US, international)\0English (UK)\0"
+        "French\0French (Canada)\0Spanish\0Spanish (Latin America)\0German\0"
+        "Italian\0Portuguese\0Russian\0Korean\0Chinese (simplified)\0"
+        "Chinese (traditional)\0";
+    const char *p = kNames;
+    for (int i = 0; i < layout && *p; i++)
+        while (*p++) {}
+    return layout < 0 || !*p ? "unknown" : p;
 }
 
 static bool keyboard_layout_supported(int layout) {

@@ -35,6 +35,19 @@ bool json_get_int(const JsonDoc *doc, int tok, long long *out);
 bool json_get_double(const JsonDoc *doc, int tok, double *out);
 bool json_get_bool(const JsonDoc *doc, int tok, bool *out);
 
+// Decimal number parsing and formatting without newlib's float-capable
+// strtod/printf, which cost ~50K of code on the Switch (the build maps
+// snprintf to the integer-only sniprintf; see the Makefile).
+//
+// json_parse_double reads an optionally signed decimal with an optional
+// fraction and exponent ("-1.5e3"), after leading blanks. Returns false
+// (with *end == s) when there are no digits. end may be NULL.
+bool json_parse_double(const char *s, const char **end, double *out);
+
+// Formats v with `decimals` (0-6) digits after the point, rounded like
+// printf's "%.*f" (ties to even). Returns buf.
+const char *json_fmt_fixed(char *buf, size_t size, double v, int decimals);
+
 // Integer value of `key` in object token obj, or fallback when the key is
 // absent or not an integer.
 int json_obj_int(const JsonDoc *doc, int obj, const char *key, int fallback);

@@ -11,13 +11,13 @@
 // POST /mcp. It knows no tool: features register theirs at startup (see
 // source/features/feature_list.c) and the server dispatches tools/call by name.
 
-// One tool: its complete JSON definition (name, description, inputSchema), as
-// returned in tools/list. Generated from each feature's *_tools.json by
-// scripts/generate_resource.py, which puts the name first, so the schema
-// always starts with {"name":"<name>" and doubles as the name.
-typedef struct {
-    const char *schema;
-} McpToolDef;
+// One tool: its JSON definition (name, description, inputSchema), as returned
+// in tools/list. Generated from each feature's *_tools.json by
+// scripts/generate_resource.py. Element 0 is the definition, name first, so it
+// always starts with {"name":"<name>" and doubles as the name. Text shared by
+// several tools of a feature is stored once: each byte 0x01..0x1f in element
+// 0 stands for the string at that index of the array.
+typedef const char *McpToolDef[];
 
 // One tools/call being served.
 typedef struct {
@@ -31,7 +31,7 @@ typedef struct {
 typedef void (*McpToolHandler)(McpCall *call);
 
 // Capacity of the tool table; registration fails (and logs) past it.
-#define MCP_MAX_TOOLS 64 // a full build registers 48
+#define MCP_MAX_TOOLS 52 // a full build registers 48
 
 // Registers the POST/GET /mcp routes and the "path=/mcp" mDNS TXT entry.
 void mcp_server_http_register(void);

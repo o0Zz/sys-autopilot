@@ -29,6 +29,13 @@
 // the request, or NULL when request memory is exhausted.
 void *request_alloc(HttpRequest *req, size_t size);
 
+// For output of unknown size, written in one pass: request_alloc_rest() takes
+// all remaining request memory (16-byte aligned; *size receives its length,
+// possibly 0) and request_trim() gives back everything past the first `used`
+// bytes of it. Allocate nothing else in between.
+void *request_alloc_rest(HttpRequest *req, size_t *size);
+void request_trim(HttpRequest *req, void *ptr, size_t used);
+
 // Marks the current allocation level, and frees everything allocated since
 // a mark. For handlers that loop (the wait tools): each pass rewinds to the
 // mark taken before it, so a long wait does not exhaust request memory.

@@ -75,7 +75,8 @@ static void handle_float(HttpRequest *req, const char *key,
             http_send_error(req->fd, 500, "failed to read setting");
             return;
         }
-        http_send_json(req->fd, 200, "{\"%s\":%.3f}", key, v);
+        char num[24];
+        http_send_json(req->fd, 200, "{\"%s\":%s}", key, json_fmt_fixed(num, sizeof(num), v, 3));
         return;
     }
     JsonDoc *doc = request_read_json(req);
@@ -87,11 +88,12 @@ static void handle_float(HttpRequest *req, const char *key,
         http_send_error(req->fd, 400, "missing numeric value (0.0 - 1.0)");
         return;
     }
+    char num[24];
     if (!set((float)v))
         http_send_error(req->fd, 500, "failed to set setting");
     else
-        http_send_json(req->fd, 200, "{\"ok\":true,\"%s\":%.3f}", key,
-                       v < 0 ? 0 : (v > 1 ? 1 : v));
+        http_send_json(req->fd, 200, "{\"ok\":true,\"%s\":%s}", key,
+                       json_fmt_fixed(num, sizeof(num), v < 0 ? 0 : (v > 1 ? 1 : v), 3));
 }
 
 static void handle_brightness(HttpRequest *req) {

@@ -112,7 +112,8 @@ bool http_set_nonblocking(int fd) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
-// Decodes %XX escapes and '+' (as space) in-place-safe copy from src to out.
+// Decodes %XX escapes and '+' (as space) from src to out. out may be src: it
+// never writes ahead of where it reads.
 static void url_decode(const char *src, size_t srclen, char *out, size_t outsz) {
     size_t o = 0;
     for (size_t i = 0; i < srclen && o + 1 < outsz; i++) {
@@ -131,19 +132,27 @@ static void url_decode(const char *src, size_t srclen, char *out, size_t outsz) 
     out[o] = '\0';
 }
 
-static bool header_is(const char *line, const char *name, const char **out_value) {
+static bool header_is(char *line, const char *name, char **out_value) {
     size_t n = strlen(name);
     if (strncasecmp(line, name, n) != 0 || line[n] != ':')
         return false;
-    const char *v = line + n + 1;
+    char *v = line + n + 1;
     while (*v == ' ' || *v == '\t') v++;
     *out_value = v;
     return true;
 }
 
+// Cuts s, which lies in the request buffer, to at most max chars.
+static const char *cap(char *s, size_t max) {
+    if (strlen(s) > max)
+        s[max] = '\0';
+    return s;
+}
+
 bool http_read_request(int fd, HttpRequest *req) {
     memset(req, 0, sizeof(*req));
     req->fd = fd;
+    req->path = req->query = req->host = req->auth = "";
 
     // Read until end of headers (or buffer full).
     size_t total = 0;
@@ -190,9 +199,10 @@ bool http_read_request(int fd, HttpRequest *req) {
     char *qmark = strchr(target, '?');
     if (qmark) {
         *qmark = '\0';
-        snprintf(req->query, sizeof(req->query), "%s", qmark + 1);
+        req->query = cap(qmark + 1, 2047);
     }
-    url_decode(target, strlen(target), req->path, sizeof(req->path));
+    url_decode(target, strlen(target), target, 512);
+    req->path = target;
 
     // --- Headers ---
     char *cursor = line_end ? line_end + 2 : hdr_end;
@@ -201,14 +211,14 @@ bool http_read_request(int fd, HttpRequest *req) {
         if (next)
             *next = '\0';
 
-        const char *value;
+        char *value;
         if (header_is(cursor, "Content-Length", &value)) {
             req->content_length = (size_t)strtoull(value, NULL, 10);
             req->has_content_length = true;
         } else if (header_is(cursor, "Host", &value)) {
-            snprintf(req->host, sizeof(req->host), "%s", value);
+            req->host = cap(value, 127);
         } else if (header_is(cursor, "Authorization", &value)) {
-            snprintf(req->auth, sizeof(req->auth), "%s", value);
+            req->auth = cap(value, 255);
         } else if (header_is(cursor, "Expect", &value)) {
             if (strncasecmp(value, "100-continue", 12) == 0)
                 req->expect_100 = true;

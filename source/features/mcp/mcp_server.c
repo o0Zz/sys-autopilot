@@ -43,7 +43,7 @@ static int g_tool_count;
 
 void mcp_server_register_tool(const McpToolDef *def, McpToolHandler handler) {
     if (g_tool_count >= MCP_MAX_TOOLS) {
-        LOGW("mcp", "tool table full, dropping %.64s", def->schema);
+        LOGW("mcp", "tool table full, dropping %.64s", (*def)[0]);
         return;
     }
     g_tools[g_tool_count++] = (Tool){ def, handler };
@@ -288,6 +288,29 @@ static void handle_initialize(HttpRequest *req, const char *id, const JsonDoc *d
     send_rpc_value(req->fd, id, "result", val, (size_t)n);
 }
 
+// Writes a tool's definition to fd, or only measures it when fd < 0: element
+// 0 with each marker byte replaced by the shared text it indexes (see
+// McpToolDef). Returns its length.
+static size_t write_tool(int fd, const McpToolDef *def) {
+    size_t total = 0;
+    for (const char *p = (*def)[0]; *p;) {
+        const char *run = p;
+        size_t n = 0;
+        if ((unsigned char)*p < 0x20) {
+            run = (*def)[(unsigned char)*p++];
+            n = strlen(run);
+        } else {
+            while ((unsigned char)p[n] >= 0x20)
+                n++;
+            p += n;
+        }
+        if (fd >= 0)
+            http_write_all(fd, run, n);
+        total += n;
+    }
+    return total;
+}
+
 // tools/list: {"tools":[<def>,<def>,...]}, streamed straight from the
 // registered definitions (about 27K in all) rather than assembled in memory.
 static void handle_tools_list(HttpRequest *req, const char *id) {
@@ -297,7 +320,7 @@ static void handle_tools_list(HttpRequest *req, const char *id) {
     size_t hn = rpc_head(head, id, "result");
     size_t total = hn + sizeof(pre) - 1 + sizeof(post) - 1 + 1;
     for (int i = 0; i < g_tool_count; i++)
-        total += strlen(g_tools[i].def->schema) + (i ? 1 : 0); // + separating comma
+        total += write_tool(-1, g_tools[i].def) + (i ? 1 : 0); // + separating comma
 
     http_send_header(req->fd, 200, "application/json", total);
     http_write_all(req->fd, head, hn);
@@ -305,7 +328,7 @@ static void handle_tools_list(HttpRequest *req, const char *id) {
     for (int i = 0; i < g_tool_count; i++) {
         if (i)
             http_write_all(req->fd, ",", 1);
-        http_write_all(req->fd, g_tools[i].def->schema, strlen(g_tools[i].def->schema));
+        write_tool(req->fd, g_tools[i].def);
     }
     http_write_all(req->fd, post, sizeof(post) - 1);
     http_write_all(req->fd, "}", 1);
@@ -314,7 +337,7 @@ static void handle_tools_list(HttpRequest *req, const char *id) {
 // True if def is the tool called `name` (see McpToolDef for the layout).
 static bool tool_is(const McpToolDef *def, const char *name) {
     static const char prefix[] = "{\"name\":\"";
-    const char *p = def->schema + sizeof(prefix) - 1;
+    const char *p = (*def)[0] + sizeof(prefix) - 1;
     size_t n = strlen(name);
     return strncmp(p, name, n) == 0 && p[n] == '"';
 }

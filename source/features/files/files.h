@@ -32,10 +32,11 @@ bool files_trim_slash(char *fspath);
 // from the end (tail); a negative *length means "to the end".
 void files_clamp_range(long long fsize, long long *offset, long long *length);
 
-// Builds a JSON directory listing (malloc'd, caller frees). NULL on error,
-// with *err set.
-char *files_build_listing(const char *fspath, const char *userpath,
-                          size_t *out_len, const char **err);
+// Writes the JSON directory listing of fspath into buf (NUL-terminated) and
+// its length into *out_len. Returns false with *err set when the directory
+// cannot be opened or the listing does not fit; *out_len is then 0.
+bool files_build_listing(const char *fspath, const char *userpath, char *buf, size_t bufsz,
+                         size_t *out_len, const char **err);
 
 // Deletes a file or empty directory. Returns true on success, *err on failure.
 bool files_delete_path(const char *fspath, const char **err);

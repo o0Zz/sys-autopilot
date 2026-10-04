@@ -36,15 +36,18 @@ static void tool_list_directory(McpCall *call) {
 
     files_trim_slash(fspath);
 
+    // The reply escapes the listing into request memory too, so give back
+    // what the listing does not use.
     const char *err = NULL;
-    size_t len = 0;
-    char *json = files_build_listing(fspath, fspath + strlen(FILES_ROOT), &len, &err);
-    if (!json) {
+    size_t cap, len;
+    char *json = request_alloc_rest(call->req, &cap);
+    bool ok = files_build_listing(fspath, fspath + strlen(FILES_ROOT), json, cap, &len, &err);
+    request_trim(call->req, json, len);
+    if (!ok) {
         mcp_reply_error(call, err);
         return;
     }
     mcp_reply_text_len(call, json, len);
-    free(json);
 }
 
 // Replaces invalid UTF-8 sequences with '?' so the output is always a legal

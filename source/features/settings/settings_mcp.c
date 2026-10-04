@@ -66,8 +66,8 @@ static void get_float(McpCall *call, const char *label, bool (*get)(float *)) {
         mcp_reply_error(call, "failed to read setting");
         return;
     }
-    char msg[64];
-    snprintf(msg, sizeof(msg), "%s: %.2f", label, v);
+    char msg[64], num[24];
+    snprintf(msg, sizeof(msg), "%s: %s", label, json_fmt_fixed(num, sizeof(num), v, 2));
     mcp_reply_text(call, msg);
 }
 
@@ -86,8 +86,8 @@ static void set_float(McpCall *call, const char *key, bool (*set)(float)) {
         mcp_reply_error(call, "failed to set setting");
         return;
     }
-    char msg[64];
-    snprintf(msg, sizeof(msg), "%s set to %.2f", key, v);
+    char msg[64], num[24];
+    snprintf(msg, sizeof(msg), "%s set to %s", key, json_fmt_fixed(num, sizeof(num), v, 2));
     mcp_reply_text(call, msg);
 }
 

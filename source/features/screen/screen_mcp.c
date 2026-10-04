@@ -93,16 +93,17 @@ static void tool_wait_for_screen(McpCall *call) {
         return;
     }
 
-    char msg[160];
+    char msg[160], diff[24];
+    json_fmt_fixed(diff, sizeof(diff), res.diff_pct, 1);
     if (res.met && w.mode == SCREEN_WAIT_CHANGE)
-        snprintf(msg, sizeof(msg), "screen changed after %d ms (%.1f%% of the screen)",
-                 res.elapsed_ms, res.diff_pct);
+        snprintf(msg, sizeof(msg), "screen changed after %d ms (%s%% of the screen)",
+                 res.elapsed_ms, diff);
     else if (res.met)
         snprintf(msg, sizeof(msg), "screen stable after %d ms", res.elapsed_ms);
     else
-        snprintf(msg, sizeof(msg), "timed out after %d ms: screen %s (last difference %.1f%%)",
+        snprintf(msg, sizeof(msg), "timed out after %d ms: screen %s (last difference %s%%)",
                  res.elapsed_ms, w.mode == SCREEN_WAIT_CHANGE ? "did not change" : "kept changing",
-                 res.diff_pct);
+                 diff);
 
     bool want = false;
     mcp_arg_bool(call, "screenshot", &want);

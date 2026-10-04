@@ -68,6 +68,11 @@ endif
 # config.ini (see log.{c,h}), so this is free with `log = off`.
 DEFINES	+=	-DLOG_TO_FILE
 
+# Nothing prints or parses floats through libc: util/json.c formats and parses
+# decimals itself. Mapping snprintf to newlib's integer-only variant keeps the
+# float-capable printf and strtod machinery (~50K of code) out of the binary.
+DEFINES	+=	-Dsnprintf=sniprintf -Dvsnprintf=vsniprintf
+
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
@@ -103,6 +108,9 @@ endef
 export DISCARD_EHFRAME_LD DISCARD_EHFRAME_SPECS
 
 LDFLAGS	=	-specs=discard-ehframe.specs -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+# Sorting sections by alignment packs the 4 KB-aligned buffers together instead
+# of padding up to 4 KB in front of each.
+LDFLAGS	+=	-Wl,--sort-section=alignment
 
 LIBS	:= -lnx
 

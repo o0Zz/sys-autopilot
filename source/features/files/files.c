@@ -4,8 +4,8 @@
 #include "util/json.h"
 #include "util/sha256.h"
 
+#include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -55,41 +55,32 @@ void files_mkdirs_for(const char *fspath) {
     }
 }
 
-// Appends to a heap-grown buffer, doubling as needed. Returns false on OOM.
-static bool buf_append(char **buf, size_t *len, size_t *cap, const char *data, size_t n) {
-    if (*len + n + 1 > *cap) {
-        size_t newcap = *cap ? *cap : 1024;
-        while (*len + n + 1 > newcap)
-            newcap *= 2;
-        char *nb = realloc(*buf, newcap);
-        if (!nb)
-            return false;
-        *buf = nb;
-        *cap = newcap;
-    }
-    memcpy(*buf + *len, data, n);
-    *len += n;
-    (*buf)[*len] = '\0';
+// snprintf at buf + *len. Returns false, counting nothing, when the text and
+// its NUL terminator do not fit in bufsz.
+static bool appendf(char *buf, size_t bufsz, size_t *len, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf + *len, bufsz - *len, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= bufsz - *len)
+        return false;
+    *len += (size_t)n;
     return true;
 }
 
-char *files_build_listing(const char *fspath, const char *userpath,
-                          size_t *out_len, const char **err) {
+bool files_build_listing(const char *fspath, const char *userpath, char *buf, size_t bufsz,
+                         size_t *out_len, const char **err) {
+    *out_len = 0;
     DIR *dir = opendir(fspath);
     if (!dir) {
         *err = "directory not found";
-        return NULL;
+        return false;
     }
 
-    char *json = NULL;
-    size_t len = 0, cap = 0;
-    bool ok = true;
-
-    char head[600];
+    size_t len = 0;
     char escaped[520];
     json_escape(userpath, strlen(userpath), escaped, sizeof(escaped));
-    int n = snprintf(head, sizeof(head), "{\"path\":\"%s\",\"entries\":[", escaped);
-    ok = buf_append(&json, &len, &cap, head, (size_t)n);
+    bool ok = appendf(buf, bufsz, &len, "{\"path\":\"%s\",\"entries\":[", escaped);
 
     struct dirent *ent;
     bool first = true;
@@ -109,32 +100,29 @@ char *files_build_listing(const char *fspath, const char *userpath,
                         sizeof(escaped)) == (size_t)-1)
             continue;
 
-        char entry[640];
         if (is_dir) {
-            n = snprintf(entry, sizeof(entry), "%s{\"name\":\"%s\",\"type\":\"dir\"}",
+            ok = appendf(buf, bufsz, &len, "%s{\"name\":\"%s\",\"type\":\"dir\"}",
                          first ? "" : ",", escaped);
         } else {
-            n = snprintf(entry, sizeof(entry),
+            ok = appendf(buf, bufsz, &len,
                          "%s{\"name\":\"%s\",\"type\":\"file\",\"size\":%lld,\"mtime\":%lld}",
                          first ? "" : ",", escaped,
                          have_st ? (long long)st.st_size : 0LL,
                          have_st ? (long long)st.st_mtime : 0LL);
         }
-        ok = buf_append(&json, &len, &cap, entry, (size_t)n);
         first = false;
     }
     closedir(dir);
 
     if (ok)
-        ok = buf_append(&json, &len, &cap, "]}", 2);
+        ok = appendf(buf, bufsz, &len, "]}");
 
     if (!ok) {
-        free(json);
         *err = "out of memory building listing";
-        return NULL;
+        return false;
     }
     *out_len = len;
-    return json;
+    return true;
 }
 
 bool files_delete_path(const char *fspath, const char **err) {

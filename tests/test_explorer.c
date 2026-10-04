@@ -23,8 +23,10 @@ static size_t capture(const char *path, void (*handler)(HttpRequest *), const ch
     memset(&req, 0, sizeof(req));
     req.fd = sv[0];
     snprintf(req.method, sizeof(req.method), "GET");
-    snprintf(req.path, sizeof(req.path), "%s", path);
-    snprintf(req.host, sizeof(req.host), "%s", host);
+    req.path = path;
+    req.query = "";
+    req.host = host;
+    req.auth = "";
     if (handler)
         handler(&req);
     else

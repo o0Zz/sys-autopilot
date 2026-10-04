@@ -482,13 +482,13 @@ int mdns_open(const MdnsConfig *cfg) {
     return fd;
 }
 
-// Outgoing datagram, shared by replies and announcements (the server loop is
-// single-threaded and neither re-enters the other).
-static uint8_t g_outbuf[1500];
+// Datagram buffers live on the stack: both calls run from the server loop,
+// never inside a request handler, so the main thread stack has room for them.
+#define MDNS_DGRAM_MAX 1500
 
 void mdns_handle_readable(int fd, const MdnsConfig *cfg) {
-    static uint8_t inbuf[1500];
-    uint8_t *outbuf = g_outbuf;
+    uint8_t inbuf[MDNS_DGRAM_MAX];
+    uint8_t outbuf[MDNS_DGRAM_MAX];
 
     struct sockaddr_in from = {0};
     socklen_t fromlen = sizeof(from);
@@ -499,7 +499,7 @@ void mdns_handle_readable(int fd, const MdnsConfig *cfg) {
 
     bool unicast = false;
     size_t rlen = mdns_build_response(cfg, inbuf, (size_t)n,
-                                      outbuf, sizeof(g_outbuf), &unicast);
+                                      outbuf, sizeof(outbuf), &unicast);
     if (rlen == 0)
         return;
 
@@ -515,8 +515,8 @@ void mdns_handle_readable(int fd, const MdnsConfig *cfg) {
 }
 
 bool mdns_announce(int fd, const MdnsConfig *cfg) {
-    uint8_t *outbuf = g_outbuf;
-    size_t len = mdns_build_announcement(cfg, outbuf, sizeof(g_outbuf));
+    uint8_t outbuf[MDNS_DGRAM_MAX];
+    size_t len = mdns_build_announcement(cfg, outbuf, sizeof(outbuf));
     if (len == 0)
         return false;
     struct sockaddr_in grp = mdns_group();

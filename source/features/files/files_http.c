@@ -107,14 +107,15 @@ static void get_files(HttpRequest *req) {
 
     if (S_ISDIR(st.st_mode)) {
         const char *err = NULL;
-        size_t len = 0;
-        char *json = files_build_listing(fspath, fspath + rootlen, &len, &err);
-        if (!json) {
+        size_t cap, len;
+        char *json = request_alloc_rest(req, &cap);
+        bool ok = files_build_listing(fspath, fspath + rootlen, json, cap, &len, &err);
+        request_trim(req, json, len);
+        if (!ok) {
             http_send_error(req->fd, 500, err);
             return;
         }
         http_send_response(req->fd, 200, "application/json", json, len);
-        free(json);
     } else if (want_dir) {
         http_send_error(req->fd, 400, "not a directory");
     } else {

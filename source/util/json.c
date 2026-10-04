@@ -1,6 +1,7 @@
 #include "jsmn.h" // implementation (no JSMN_HEADER)
 #include "util/json.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -149,12 +150,93 @@ bool json_get_double(const JsonDoc *doc, int tok, double *out) {
     char buf[48];
     if (!json_raw(doc, tok, buf, sizeof(buf)))
         return false;
-    char *end = NULL;
-    double v = strtod(buf, &end);
-    if (end == buf)
+    return json_parse_double(buf, NULL, out);
+}
+
+bool json_parse_double(const char *s, const char **end, double *out) {
+    const char *p = s;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    bool neg = *p == '-';
+    if (*p == '-' || *p == '+')
+        p++;
+    // Digits accumulate into an integer mantissa (exact up to 2^53), then a
+    // single scaling by a power of ten: "0.125" is 125 / 1000, exactly.
+    double mant = 0;
+    int digits = 0, exp10 = 0;
+    for (; *p >= '0' && *p <= '9'; p++, digits++)
+        mant = mant * 10 + (*p - '0');
+    if (*p == '.') {
+        for (p++; *p >= '0' && *p <= '9'; p++, digits++, exp10--)
+            mant = mant * 10 + (*p - '0');
+    }
+    if (digits == 0) {
+        if (end)
+            *end = s;
         return false;
-    *out = v;
+    }
+    if (*p == 'e' || *p == 'E') {
+        const char *q = p + 1;
+        bool eneg = *q == '-';
+        if (*q == '-' || *q == '+')
+            q++;
+        if (*q >= '0' && *q <= '9') {
+            int e = 0;
+            for (; *q >= '0' && *q <= '9'; q++)
+                if (e < 1000)
+                    e = e * 10 + (*q - '0');
+            exp10 += eneg ? -e : e;
+            p = q;
+        }
+    }
+    double scale = 1;
+    for (int i = exp10 < 0 ? -exp10 : exp10; i > 0; i--)
+        scale *= 10;
+    mant = exp10 < 0 ? mant / scale : mant * scale;
+    if (end)
+        *end = p;
+    *out = neg ? -mant : mant;
     return true;
+}
+
+const char *json_fmt_fixed(char *buf, size_t size, double v, int decimals) {
+    if (decimals < 0 || decimals > 6)
+        decimals = decimals < 0 ? 0 : 6;
+    unsigned long long scale = 1;
+    for (int i = 0; i < decimals; i++)
+        scale *= 10;
+    // Exact, like printf: v = mant * 2^-shift, so v * scale is an integer
+    // product shifted right, and the bits shifted out decide the rounding
+    // (ties to even). Multiplying in floating point would round first and
+    // turn e.g. 0.15 (just below) into a tie.
+    uint64_t bits;
+    memcpy(&bits, &v, sizeof(bits));
+    int bexp = (int)((bits >> 52) & 0x7ff);
+    uint64_t mant = bits & ((1ULL << 52) - 1);
+    if (bexp != 0)
+        mant |= 1ULL << 52;
+    else
+        bexp = 1;
+    int shift = 1075 - bexp;
+    unsigned __int128 p = (unsigned __int128)mant * scale;
+    unsigned long long n;
+    if (shift <= 0) {
+        n = shift > -64 ? (unsigned long long)(p << -shift) : ~0ULL;
+    } else if (shift >= 128) {
+        n = 0;
+    } else {
+        n = (unsigned long long)(p >> shift);
+        unsigned __int128 rem = p & (((unsigned __int128)1 << shift) - 1);
+        unsigned __int128 half = (unsigned __int128)1 << (shift - 1);
+        if (rem > half || (rem == half && (n & 1)))
+            n++;
+    }
+    const char *sign = (bits >> 63) ? "-" : "";
+    if (decimals > 0)
+        snprintf(buf, size, "%s%llu.%0*llu", sign, n / scale, decimals, n % scale);
+    else
+        snprintf(buf, size, "%s%llu", sign, n);
+    return buf;
 }
 
 bool json_get_bool(const JsonDoc *doc, int tok, bool *out) {

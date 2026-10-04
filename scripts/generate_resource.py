@@ -6,13 +6,17 @@ the same relative path under the output directory, which the build puts on the
 include path:
 
   features/explorer/explorer.html     -> OUT/features/explorer/explorer_html.h
-      The page as one C string, kExplorerHtml.
+      The page as one C string, kExplorerHtml. Inside <script> blocks,
+      indentation, blank lines and full-line // comments are dropped.
 
   features/process/process_tools.json -> OUT/features/process/process_tools.h
       One McpToolDef per MCP tool (kToolProcessStart, ...): its minified JSON
       definition, name first, ready for mcp_server_register_tool(). Each
       file's "$defs" hold property definitions shared by its tools; every
       "$ref": "#/$defs/<name>" is inlined, so clients never see a reference.
+      A $def used by several tools is stored once: the tool's text holds a
+      byte 0x01..0x1f where it goes, an index into the McpToolDef array (see
+      mcp_server.h).
 
 Usage:
   scripts/generate_resource.py --out DIR            generate every resource
@@ -24,6 +28,7 @@ do not trigger a rebuild.
 """
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
@@ -36,7 +41,8 @@ def camel(name):
 
 
 def c_escape(s):
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\t", "\\t")
+    s = s.replace("\\", "\\\\").replace('"', '\\"').replace("\t", "\\t")
+    return re.sub(r"[\x00-\x1f]", lambda m: "\\%03o" % ord(m.group()), s)
 
 
 def c_string_lines(payload, width=100):
@@ -54,6 +60,28 @@ def header_banner(src_name):
 
 # --- text resources (HTML) ----------------------------------------------------
 
+def squeeze_scripts(lines, path):
+    """Drops indentation, blank lines and full-line // comments inside <script>
+    blocks. Line breaks stay (automatic semicolon insertion relies on them)."""
+    out, in_script = [], False
+    for line in lines:
+        s = line.strip()
+        if in_script and s == "</script>":
+            in_script = False
+        elif in_script:
+            # A template literal or a continued string could span lines, where
+            # the indentation is content.
+            if "`" in s or s.endswith("\\"):
+                raise SystemExit("%s: multi-line JS strings are not supported" % path)
+            if s and not s.startswith("//"):
+                out.append(s)
+            continue
+        elif s == "<script>":
+            in_script = True
+        out.append(line)
+    return out
+
+
 def generate_text(path):
     with open(path, encoding="utf-8", newline="") as f:
         text = f.read()
@@ -63,7 +91,7 @@ def generate_text(path):
     stem, ext = os.path.splitext(os.path.basename(path))
     symbol = "k" + camel(stem) + camel(ext[1:])
     lines = header_banner(os.path.basename(path)) + ["static const char %s[] =" % symbol]
-    for line in text.rstrip("\n").split("\n"):
+    for line in squeeze_scripts(text.rstrip("\n").split("\n"), path):
         lines.append('    "%s\\n"' % c_escape(line))
     lines[-1] += ";"
     return "%s_%s.h" % (stem, ext[1:]), "\n".join(lines) + "\n"
@@ -71,18 +99,82 @@ def generate_text(path):
 
 # --- MCP tool definitions -----------------------------------------------------
 
-def resolve_refs(node, defs, where):
+# A shared $def's place in a tool's text is marked by a byte 0x01..0x1f (raw
+# control characters never occur in JSON text), so a tool can use 31 of them.
+MAX_SHARED = 0x1f
+
+# What a $ref kept for sharing serializes to (see resolve_refs).
+PLACEHOLDER = r'"\\u0000(\w+)\\u0000"'
+
+
+def minify(node):
+    return json.dumps(node, separators=(",", ":"), ensure_ascii=False)
+
+
+def resolve_refs(node, defs, where, keep=()):
+    """Inlines every $ref, except that one to a def in `keep` becomes a
+    placeholder string."""
     if isinstance(node, dict):
         if "$ref" in node:
             ref = node["$ref"]
             prefix = "#/$defs/"
             if len(node) != 1 or not ref.startswith(prefix) or ref[len(prefix):] not in defs:
                 raise SystemExit("%s: unresolvable $ref %r" % (where, ref))
-            return resolve_refs(defs[ref[len(prefix):]], defs, where)
-        return {k: resolve_refs(v, defs, where) for k, v in node.items()}
+            d = ref[len(prefix):]
+            if d in keep:
+                return "\0%s\0" % d
+            return resolve_refs(defs[d], defs, where, keep)
+        return {k: resolve_refs(v, defs, where, keep) for k, v in node.items()}
     if isinstance(node, list):
-        return [resolve_refs(v, defs, where) for v in node]
+        return [resolve_refs(v, defs, where, keep) for v in node]
     return node
+
+
+def tool_pieces(tool, defs, where, keep=()):
+    """The tool's minified JSON, name first, split around its kept $refs:
+    [text, def, text, def, ..., text]."""
+    resolved = resolve_refs(tool, defs, where, keep)
+    resolved = dict([("name", tool["name"])] + [(k, v) for k, v in resolved.items() if k != "name"])
+    return re.split(PLACEHOLDER, minify(resolved))
+
+
+def grow_shared(pieces, shared):
+    """Moves the JSON that surrounds every use of a shared def (its property
+    key, the separator before the next one...) into the shared text, then
+    merges shared defs that always appear back to back. `pieces` lists are
+    edited in place."""
+    def uses(d):
+        return [(ps, i) for ps in pieces for i in range(1, len(ps), 2) if ps[i] == d]
+
+    changed = True
+    while changed:
+        changed = False
+        for d in list(shared):
+            occ = uses(d)
+            while True:  # the character every use has just before
+                c = {ps[i - 1][-1:] for ps, i in occ}
+                if len(c) != 1 or c == {""}:
+                    break
+                shared[d] = c.pop() + shared[d]
+                for ps, i in occ:
+                    ps[i - 1] = ps[i - 1][:-1]
+            while True:  # the character every use has just after
+                c = {ps[i + 1][:1] for ps, i in occ}
+                if len(c) != 1 or c == {""}:
+                    break
+                shared[d] += c.pop()
+                for ps, i in occ:
+                    ps[i + 1] = ps[i + 1][1:]
+            # The shared def that every use is directly followed by, and only so.
+            nxt = {ps[i + 2] if not ps[i + 1] and i + 2 < len(ps) else None for ps, i in occ}
+            if len(nxt) == 1 and None not in nxt and d not in nxt:
+                e = nxt.pop()
+                if len(uses(e)) == len(occ):
+                    shared[d] += shared.pop(e)
+                    for ps, i in reversed(occ):
+                        del ps[i + 1:i + 3]
+                    changed = True
+                    break
 
 
 def generate_tools(path):
@@ -94,7 +186,6 @@ def generate_tools(path):
     if not isinstance(tools, list) or not tools:
         raise SystemExit("%s: needs a non-empty \"tools\" array" % name)
 
-    lines = header_banner(name) + ['#include "features/mcp/mcp_server.h"', ""]
     seen = set()
     for tool in tools:
         tname = tool.get("name")
@@ -113,11 +204,41 @@ def generate_tools(path):
         if not isinstance(tool.get("inputSchema"), dict):
             raise SystemExit("%s: missing \"inputSchema\" object" % where)
 
-        resolved = resolve_refs(tool, defs, where)
-        resolved = dict([("name", tname)] + [(k, v) for k, v in resolved.items() if k != "name"])
-        payload = json.dumps(resolved, separators=(",", ":"), ensure_ascii=False)
-        lines.append("static const McpToolDef kTool%s = {" % camel(tname))
-        lines.extend(c_string_lines(payload))
+    # Share a $def when storing it once saves more than its pointers cost.
+    counts = {}
+    for tool in tools:
+        for d in tool_pieces(tool, defs, name, defs)[1::2]:
+            counts[d] = counts.get(d, 0) + 1
+    texts = {d: minify(resolve_refs(defs[d], defs, name)) for d in counts}
+    shared = {d: t for d, t in texts.items() if (counts[d] - 1) * len(t) > 9 * counts[d]}
+    pieces = [tool_pieces(tool, defs, name, shared) for tool in tools]
+    grow_shared(pieces, shared)
+
+    stem = camel(name[:-len("_tools.json")])
+    symbols = {d: "k%sDef%s" % (stem, camel(d)) for d in shared}
+    lines = header_banner(name) + ['#include "features/mcp/mcp_server.h"', ""]
+    for d, text in shared.items():
+        lines.append("static const char %s[] =" % symbols[d])
+        lines.extend(c_string_lines(text))
+        lines[-1] += ";"
+        lines.append("")
+    for tool, ps in zip(tools, pieces):
+        where = "%s: tool %r" % (name, tool["name"])
+        used = list(dict.fromkeys(ps[1::2]))
+        if len(used) > MAX_SHARED:
+            raise SystemExit("%s: more than %d shared $defs" % (where, MAX_SHARED))
+        text = "".join(chr(used.index(p) + 1) if i % 2 else p for i, p in enumerate(ps))
+        # Self-check: the text with every marker expanded is the tool's full
+        # definition, and still starts with its name (see mcp_server.h).
+        full = tool_pieces(tool, defs, where)[0]
+        if "".join(shared[p] if i % 2 else p for i, p in enumerate(ps)) != full or \
+                re.search(r"[\x00-\x1f]", "".join(ps[0::2]) + "".join(shared.values())) or \
+                not text.startswith('{"name":"%s"' % tool["name"]):
+            raise SystemExit("%s: shared $defs do not rebuild the definition" % where)
+        lines.append("static const McpToolDef kTool%s = {" % camel(tool["name"]))
+        lines.extend(c_string_lines(text))
+        lines[-1] += ","
+        lines.extend("    %s," % symbols[d] for d in used)
         lines.append("};")
         lines.append("")
     return os.path.splitext(name)[0] + ".h", "\n".join(lines).rstrip("\n") + "\n"

@@ -443,7 +443,44 @@ static void test_keyboard(void) {
     printf("keyboard ok\n");
 }
 
+// json_parse_double / json_fmt_fixed stand in for libc's strtod and "%.*f"
+// on the Switch, so they must agree with them on what this server handles.
+static void test_decimal(void) {
+    static const char *kIn[] = {
+        "0", "1", "-1", "0.5", "0.25", "0.125", ".5", "+2.", "100", "99.999",
+        "1e2", "1.5E-3", "-2.5e+1", "  0.3", "7x", "12.5abc", "1e", "3.14159265",
+    };
+    for (size_t i = 0; i < sizeof(kIn) / sizeof(kIn[0]); i++) {
+        double got = -1;
+        const char *end = NULL;
+        char *want_end = NULL;
+        double want = strtod(kIn[i], &want_end);
+        assert(json_parse_double(kIn[i], &end, &got));
+        assert(end == want_end);
+        assert(got == want);
+    }
+    const char *end = NULL;
+    double v = 7;
+    assert(!json_parse_double("abc", &end, &v) && v == 7);
+    assert(!json_parse_double("-.", NULL, &v));
+
+    static const double kOut[] = {
+        0, 1, 0.5, 0.125, 0.375, 2.5, 0.0049, 0.3f, 0.7f, 12.3456, 99.995, 100,
+        1.0 / 3, 2.0 / 3, 0.05, 0.15, 0.25, 33.333, 66.66666, -0.5, -0.001, -12.345,
+    };
+    for (size_t i = 0; i < sizeof(kOut) / sizeof(kOut[0]); i++) {
+        for (int d = 0; d <= 3; d++) {
+            char got[32], want[32];
+            json_fmt_fixed(got, sizeof(got), kOut[i], d);
+            snprintf(want, sizeof(want), "%.*f", d, kOut[i]);
+            assert(strcmp(got, want) == 0);
+        }
+    }
+    printf("decimal ok\n");
+}
+
 int main(void) {
+    test_decimal();
     test_keyboard();
     test_base64();
     test_json();

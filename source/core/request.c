@@ -15,6 +15,18 @@ void *request_alloc(HttpRequest *req, size_t size) {
     return g_request_memory + start;
 }
 
+void *request_alloc_rest(HttpRequest *req, size_t *size) {
+    // REQUEST_MEMORY_SIZE is page-aligned, so start never passes the end.
+    size_t start = (req->mem_used + 15) & ~(size_t)15;
+    *size = REQUEST_MEMORY_SIZE - start;
+    req->mem_used = REQUEST_MEMORY_SIZE;
+    return g_request_memory + start;
+}
+
+void request_trim(HttpRequest *req, void *ptr, size_t used) {
+    request_rewind(req, (size_t)((unsigned char *)ptr - g_request_memory) + used);
+}
+
 size_t request_mark(const HttpRequest *req) {
     return req->mem_used;
 }

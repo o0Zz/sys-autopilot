@@ -46,7 +46,9 @@ static bool parse_opts(HttpRequest *req, ScreenOpts *o) {
         return false;
     }
     if (http_query_get(req, "scale", val, sizeof(val))) {
-        if (!screen_scale_div(strtod(val, NULL), &o->jpeg.div)) {
+        double scale = 0;
+        json_parse_double(val, NULL, &scale);
+        if (!screen_scale_div(scale, &o->jpeg.div)) {
             http_send_error(req->fd, 400, "invalid 'scale' (use 1, 0.5, 0.25 or 0.125)");
             return false;
         }
@@ -103,7 +105,8 @@ static void get_wait_screen(HttpRequest *req) {
     query_int(req, "timeoutMs", &w.timeout_ms);
     query_int(req, "stableMs", &w.stable_ms);
     if (http_query_get(req, "thresholdPercent", val, sizeof(val))) {
-        w.threshold_pct = strtod(val, NULL);
+        w.threshold_pct = 0;
+        json_parse_double(val, NULL, &w.threshold_pct);
         if (w.threshold_pct <= 0.0 || w.threshold_pct > 100.0) {
             http_send_error(req->fd, 400, "invalid 'thresholdPercent' (0-100]");
             return;
@@ -116,8 +119,10 @@ static void get_wait_screen(HttpRequest *req) {
         http_send_error(req->fd, 500, err);
         return;
     }
-    http_send_json(req->fd, 200, "{\"met\":%s,\"elapsedMs\":%d,\"diffPercent\":%.2f}",
-                   res.met ? "true" : "false", res.elapsed_ms, res.diff_pct);
+    char diff[24];
+    http_send_json(req->fd, 200, "{\"met\":%s,\"elapsedMs\":%d,\"diffPercent\":%s}",
+                   res.met ? "true" : "false", res.elapsed_ms,
+                   json_fmt_fixed(diff, sizeof(diff), res.diff_pct, 2));
 }
 
 void screen_http_register(void) {
