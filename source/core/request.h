@@ -16,11 +16,12 @@
 // feature's buffers.
 //
 // Sized for the most demanding request: a screenshot (the 512K capssc JPEG
-// buffer) re-encoded at full size (about 70K of transcoder state, see
-// util/jpeg.h), plus, when MCP is built, the JSON-RPC document and read
-// buffers the MCP server holds around it.
+// buffer) re-encoded at full size (80,560 bytes of transcoder state measured
+// on a console for the 4:4:0 capture, see util/jpeg.h), plus, when MCP is
+// built, the JSON-RPC document and read buffers the MCP server holds around
+// it (45,072 bytes measured). The MCP figure leaves ~5K spare.
 #ifdef FEATURE_MCP
-#define REQUEST_MEMORY_SIZE 0xA4000
+#define REQUEST_MEMORY_SIZE 0xA0000
 #else
 #define REQUEST_MEMORY_SIZE 0x94000
 #endif

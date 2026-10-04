@@ -9,12 +9,14 @@
 #include "platform/netif.h"
 #include "platform/power.h"
 
-// Inner heap: socket transfer memory + stdio buffers + headroom for the title
+// Inner heap: socket transfer memory (400K, see kSocketConfig) + stdio
+// buffers + libnx's ~28K directory state for opendir + headroom for the title
 // installer (ncm IPC, mounting the cnmt NCA). The large transient buffers
 // (JPEG, I/O, installer, title and directory listings) live in request
-// memory (core/request.h), not here; GET /status reports how much of this
-// heap is actually used.
-#define INNER_HEAP_SIZE 0x100000
+// memory (core/request.h), not here. GET /status reports how much of this
+// heap is actually used: about 470K after screenshots, listings and file
+// transfers, measured on a console.
+#define INNER_HEAP_SIZE 0x90000
 
 u32 __nx_applet_type = AppletType_None;
 u32 __nx_fs_num_sessions = 1;
@@ -45,17 +47,16 @@ void __libnx_initheap(void)
 // browsers (several connections per page load) and the REST clients see
 // "connection forcibly closed" at random.
 //
-// Smaller per-socket buffers buy more of them for roughly the same memory:
-// this pool is ~520K against ~232K before, and holds ten sockets instead of
-// two. The REST payloads are small, and a 16K receive window still streams a
+// Smaller per-socket buffers buy more of them: this pool is 400K against
+// ~232K before, and holds ten sockets instead of two. The REST payloads are small, and a 16K receive window still streams a
 // screenshot or a sysmodule upload at several MB/s on a LAN.
 static const SocketInitConfig kSocketConfig = {
     .tcp_tx_buf_size     = 0x4000,
     .tcp_rx_buf_size     = 0x4000,
     .tcp_tx_buf_max_size = 0,       // fixed size
     .tcp_rx_buf_max_size = 0,       // fixed size
-    .udp_tx_buf_size     = 0x2400,
-    .udp_rx_buf_size     = 0x2400,  // mDNS packets are ~1.5K
+    .udp_tx_buf_size     = 0x1000,
+    .udp_rx_buf_size     = 0x1000,  // mDNS packets are ~1.5K
     .sb_efficiency       = 10,
     // Sessions are bsd IPC channels, not sockets: this server is
     // single-threaded, so it never needs more than a couple.

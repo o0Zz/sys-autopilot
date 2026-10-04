@@ -26,7 +26,7 @@ A fork of [TooTallNate/sys-autopilot](https://github.com/TooTallNate/sys-autopil
   or exits, or a log line appears, instead of polling with screenshots.
 - **Launch an NRO** through hbmenu's netloader, **list crash reports**, and
   **type text** on a virtual USB keyboard.
-- **Smaller footprint**: 1 MB heap instead of 4 MB, one shared per-request
+- **Smaller footprint**: 576 KB heap instead of 4 MB, one shared per-request
   buffer instead of per-feature statics, about 65 KB less code.
 - **Reliable networking**: ten sockets instead of two for the same memory, so
   browsers and concurrent clients no longer get random resets.

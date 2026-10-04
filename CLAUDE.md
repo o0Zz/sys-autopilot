@@ -30,7 +30,7 @@ The image has no host `cc`; install `gcc libc6-dev` with apt before running
 
 ## Layout
 
-- `source/main.c`: sysmodule entry. Fixed 1 MB inner heap, `__appInit`
+- `source/main.c`: sysmodule entry. Fixed 576 KB inner heap, `__appInit`
   opens services by hand, socket pool config.
 - `source/core/`: HTTP parser and responses, router, server loop, request
   memory, config, mDNS, logging.

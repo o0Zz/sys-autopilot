@@ -10,7 +10,7 @@
 // The screenshot shares request memory with the JSON-RPC document the MCP
 // server already holds, and a re-encoded one with the transcoder's state;
 // make sure all of it fits.
-_Static_assert(CAPSSC_JPEG_BUFFER_SIZE + 0x10000 + 0x14000 <= REQUEST_MEMORY_SIZE,
+_Static_assert(CAPSSC_JPEG_BUFFER_SIZE + 0xC000 + 0x14000 <= REQUEST_MEMORY_SIZE,
                "request memory too small for an MCP screenshot");
 
 const char *screen_mcp_parse_opts(McpCall *call, const char *scale_key, ScreenOpts *o) {
