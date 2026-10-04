@@ -44,10 +44,7 @@ void request_release(HttpRequest *req);
 // response. Returns "" when request memory is exhausted.
 const char *request_json_escape(HttpRequest *req, const char *s);
 
-// Largest JSON body request_read_json() accepts.
-#define REQUEST_JSON_MAX 16384
-
-// Reads the request body and parses it as a JSON object (an empty body counts
-// as {}). The root object is token 0. Returns NULL after sending a 4xx error.
+// Reads the request body (16 KB at most) and parses it as a JSON object (an
+// empty body counts as {}). The root object is token 0. Returns NULL after sending a 4xx error.
 // Both the body and the tokens live in request memory.
 JsonDoc *request_read_json(HttpRequest *req);

@@ -7,6 +7,13 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+#define CONFIG_PATH CONFIG_DIR "/config.ini"
+
+// Prefix for the auto-generated default hostname ("switch-<serial suffix>").
+#define CONFIG_DEFAULT_PREFIX "switch"
+// How many trailing serial characters to append to the default hostname.
+#define CONFIG_SERIAL_SUFFIX_LEN 4
+
 static const char *kDefaultConfig =
     "; sys-autopilot configuration\n"
     "; Changes take effect after a reboot (or sysmodule restart).\n"

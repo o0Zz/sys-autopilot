@@ -44,24 +44,6 @@ bool screen_opts_set_crop(ScreenOpts *o, int x, int y, int w, int h);
 const u8 *screen_capture(HttpRequest *req, const ScreenOpts *o, size_t *out_size,
                          Result *out_rc, char *err, size_t errsz);
 
-// Luma thumbnail of the screen at 1/8: 160x90 for the 1280x720 capture.
-#define SCREEN_THUMB_MAX (160 * 90)
-
-typedef struct {
-    int w, h;
-    u8 px[SCREEN_THUMB_MAX];
-} ScreenThumb;
-
-// Captures `stack` into jpeg_buf (CAPSSC_JPEG_BUFFER_SIZE bytes, reused across
-// calls) and decodes it into *out. Decoder memory comes from request memory
-// and is released before returning.
-bool screen_capture_thumb(HttpRequest *req, ViLayerStack stack, u8 *jpeg_buf, ScreenThumb *out,
-                          char *err, size_t errsz);
-
-// Percentage (0..100) of thumbnail pixels whose luma differs by more than a
-// small noise margin; 100 when the sizes differ.
-double screen_thumb_diff(const ScreenThumb *a, const ScreenThumb *b);
-
 // --- waiting for the screen ------------------------------------------------------
 
 typedef enum {

@@ -3,6 +3,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#define PFS0_MAGIC 0x30534650u // "PFS0"
+#define HFS0_MAGIC 0x30534648u // "HFS0"
+#define XCI_HEAD_MAGIC 0x48454144u // "HEAD" read big-endian (bytes H,E,A,D)
+
 // --- PFS0 / HFS0 header parsing (pure) ---------------------------------------
 
 // On-disk layout of both: Header(0x10: magic, file_count, string_table_size,

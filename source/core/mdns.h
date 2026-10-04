@@ -13,11 +13,6 @@
 // The wire-format helpers (parse/build) are pure and host-testable; the
 // socket lifecycle (open/announce/close + poll integration) is Switch-only.
 
-// Service type advertised over DNS-SD.
-#define MDNS_SERVICE_TYPE "_sys-autopilot._tcp.local"
-#define MDNS_MULTICAST_ADDR "224.0.0.251"
-#define MDNS_PORT 5353
-
 // Immutable advertising parameters, computed once at startup.
 typedef struct {
     char instance[64];   // DNS-SD instance label, e.g. "nintendo-switch"

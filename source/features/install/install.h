@@ -30,8 +30,6 @@ typedef struct {
 
 // --- PFS0 parsing (pure, host-testable) --------------------------------------
 
-#define PFS0_MAGIC 0x30534650u // "PFS0"
-
 // A file in a PFS0 or HFS0 partition.
 typedef struct {
     char     name[256];
@@ -59,8 +57,6 @@ size_t pfs0_header_size(const uint8_t *buf16);
 // are 0x40 bytes (offset/size/name_offset/hash_size/pad + 0x20 hash) instead of
 // PFS0's 0x18.
 
-#define HFS0_MAGIC 0x30534648u // "HFS0"
-
 // Returns the number of header bytes needed to parse the file table+string
 // table given the first 16 bytes (the fixed HFS0 header). Returns 0 if `buf16`
 // isn't a valid HFS0 header.
@@ -76,8 +72,6 @@ bool hfs0_parse_header(const uint8_t *buf, size_t buf_len,
                        uint64_t *out_data_start, const char **err);
 
 // --- XCI layout detection (pure) ---------------------------------------------
-
-#define XCI_HEAD_MAGIC 0x48454144u // "HEAD" read big-endian (bytes H,E,A,D)
 
 typedef enum {
     CONTAINER_UNKNOWN = 0,

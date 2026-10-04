@@ -72,7 +72,7 @@ static const KeyEntry kFr[] = {
 #undef S
 #undef G
 
-const char *keyboard_layout_name(int layout) {
+static const char *keyboard_layout_name(int layout) {
     static const char *const kNames[] = {
         "Japanese", "English (US)", "English (US, international)", "English (UK)",
         "French", "French (Canada)", "Spanish", "Spanish (Latin America)", "German",
@@ -84,7 +84,7 @@ const char *keyboard_layout_name(int layout) {
     return kNames[layout];
 }
 
-bool keyboard_layout_supported(int layout) {
+static bool keyboard_layout_supported(int layout) {
     return layout == KEYBOARD_LAYOUT_ENGLISH_US || layout == KEYBOARD_LAYOUT_ENGLISH_UK ||
            layout == KEYBOARD_LAYOUT_FRENCH;
 }

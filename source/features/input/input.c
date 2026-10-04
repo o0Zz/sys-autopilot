@@ -6,6 +6,9 @@
 #include <assert.h>
 #include <string.h>
 
+#define INPUT_DEFAULT_TOUCH_MS 100
+#define INPUT_DEFAULT_SWIPE_MS 300
+
 // buttons.h mirrors the libnx bit values so it stays host-testable; make
 // sure they can never drift.
 static_assert(BTN_A == HidNpadButton_A, "button mask drift");

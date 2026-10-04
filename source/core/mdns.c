@@ -8,6 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 
+// Service type advertised over DNS-SD.
+#define MDNS_SERVICE_TYPE "_sys-autopilot._tcp.local"
+#define MDNS_MULTICAST_ADDR "224.0.0.251"
+#define MDNS_PORT 5353
+
 // TXT pairs contributed by features (e.g. "path=/mcp").
 #define MAX_EXTRA_TXT 4
 static const char *g_extra_txt[MAX_EXTRA_TXT];

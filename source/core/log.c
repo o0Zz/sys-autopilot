@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <time.h>
 
+#define LOG_MODULE_WIDTH 8
+
 // newlib's integer-only printf variants: log lines never print floats, and
 // the float-capable vsnprintf costs ~15K of code.
 #ifdef __SWITCH__

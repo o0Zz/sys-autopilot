@@ -51,12 +51,6 @@ typedef struct {
 // At most this many strokes per character (a dead key, then the letter).
 #define KEYBOARD_MAX_STROKES 2
 
-// Human-readable name, e.g. "French".
-const char *keyboard_layout_name(int layout);
-
-// Whether type_text knows this layout.
-bool keyboard_layout_supported(int layout);
-
 // Decodes the next UTF-8 code point from *s and advances it. Returns false
 // at the end of the string or on invalid UTF-8.
 bool keyboard_next_codepoint(const char **s, uint32_t *cp);

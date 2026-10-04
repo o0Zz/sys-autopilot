@@ -90,8 +90,19 @@ const u8 *screen_capture(HttpRequest *req, const ScreenOpts *o, size_t *out_size
     return buf;
 }
 
-bool screen_capture_thumb(HttpRequest *req, ViLayerStack stack, u8 *jpeg_buf, ScreenThumb *out,
-                          char *err, size_t errsz) {
+// Luma thumbnail of the screen at 1/8: 160x90 for the 1280x720 capture.
+#define SCREEN_THUMB_MAX (160 * 90)
+
+typedef struct {
+    int w, h;
+    u8 px[SCREEN_THUMB_MAX];
+} ScreenThumb;
+
+// Captures `stack` into jpeg_buf (CAPSSC_JPEG_BUFFER_SIZE bytes, reused across
+// calls) and decodes it into *out. Decoder memory comes from request memory
+// and is released before returning.
+static bool screen_capture_thumb(HttpRequest *req, ViLayerStack stack, u8 *jpeg_buf,
+                                 ScreenThumb *out, char *err, size_t errsz) {
     u64 size = 0;
     Result rc = screen_capture_jpeg(stack, jpeg_buf, CAPSSC_JPEG_BUFFER_SIZE, &size);
     if (R_FAILED(rc)) {
@@ -109,7 +120,9 @@ bool screen_capture_thumb(HttpRequest *req, ViLayerStack stack, u8 *jpeg_buf, Sc
     return true;
 }
 
-double screen_thumb_diff(const ScreenThumb *a, const ScreenThumb *b) {
+// Percentage (0..100) of thumbnail pixels whose luma differs by more than a
+// small noise margin; 100 when the sizes differ.
+static double screen_thumb_diff(const ScreenThumb *a, const ScreenThumb *b) {
     if (a->w != b->w || a->h != b->h || a->w * a->h == 0)
         return 100.0;
     int n = a->w * a->h, changed = 0;

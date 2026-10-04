@@ -10,9 +10,6 @@
 #define INPUT_TOUCH_WIDTH  1280
 #define INPUT_TOUCH_HEIGHT 720
 
-#define INPUT_DEFAULT_TOUCH_MS 100
-#define INPUT_DEFAULT_SWIPE_MS 300
-
 // `ms`, or `fallback` when not positive, capped at INPUT_MAX_DURATION_MS.
 static inline int input_clamp_ms(int ms, int fallback) {
     if (ms <= 0)

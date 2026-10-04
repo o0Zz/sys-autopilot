@@ -6,7 +6,6 @@
 #include "core/log.h"
 
 #define CONFIG_DIR  "sdmc:/config/sys-autopilot"
-#define CONFIG_PATH CONFIG_DIR "/config.ini"
 
 typedef struct {
     int  port;
@@ -26,12 +25,7 @@ typedef struct {
     bool keep_awake;
 } Config;
 
-// Prefix for the auto-generated default hostname ("switch-<serial suffix>").
-#define CONFIG_DEFAULT_PREFIX "switch"
-// How many trailing serial characters to append to the default hostname.
-#define CONFIG_SERIAL_SUFFIX_LEN 4
-
-// Loads config from CONFIG_PATH, applying defaults for missing values.
+// Loads config from CONFIG_DIR/config.ini, applying defaults for missing values.
 // If the file does not exist, writes a commented default config first.
 void config_load(Config *cfg);
 

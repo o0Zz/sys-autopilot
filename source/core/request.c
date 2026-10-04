@@ -2,6 +2,9 @@
 
 #include <string.h>
 
+// Largest JSON body request_read_json() accepts.
+#define REQUEST_JSON_MAX 16384
+
 static unsigned char g_request_memory[REQUEST_MEMORY_SIZE] __attribute__((aligned(0x1000)));
 
 void *request_alloc(HttpRequest *req, size_t size) {

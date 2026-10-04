@@ -17,7 +17,7 @@ struct tm;
 //   |I|2026-09-29 14:03:12.345|server  | listening on port 4150
 //
 // level (D/I/W/E), local date and time with milliseconds, module padded to
-// LOG_MODULE_WIDTH, message. Messages carry no trailing newline.
+// 8 characters, message. Messages carry no trailing newline.
 //
 // File logging is best-effort: a failed open/write is silently ignored so it
 // never affects server behavior. When the file reaches LOG_FILE_SIZE_MAX it is
@@ -37,7 +37,6 @@ typedef enum {
     LOG_LEVEL_OFF,
 } LogLevel;
 
-#define LOG_MODULE_WIDTH 8
 #define LOG_LINE_MAX 512
 
 #ifndef LOG_FILE_PATH
