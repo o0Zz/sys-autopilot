@@ -55,7 +55,7 @@
           },
           "content": {
             "type": "string",
-            "description": "Base64-encoded file content."
+            "description": "Base64-encoded file content (standard alphabet; line breaks are allowed, other whitespace is not)."
           }
         },
         "required": [

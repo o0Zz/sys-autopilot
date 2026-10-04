@@ -66,13 +66,23 @@ ssize_t b64dec_update(B64Decoder *d, const char *in, size_t inlen, uint8_t *out)
     size_t o = 0;
     for (size_t i = 0; i < inlen; i++) {
         char c = in[i];
-        if (c == '=' || c == '\n' || c == '\r' || c == ' ' || c == '\t')
-            continue; // padding/whitespace: ignored, validity checked in finish
+        if (c == '\n' || c == '\r')
+            continue; // line-wrapped base64
+        if (c == '=') {
+            // Pads a group of 2 or 3 symbols up to 4, never more.
+            if (d->quad < 2 || d->quad + d->pad >= 4) {
+                d->err = true;
+                return -1;
+            }
+            d->pad++;
+            continue;
+        }
         int v = b64_val(c);
-        if (v < 0) {
+        if (v < 0 || d->pad) {
             d->err = true;
             return -1;
         }
+        d->quad = (uint8_t)((d->quad + 1) % 4);
         d->acc = (d->acc << 6) | (uint32_t)v;
         d->bits += 6;
         if (d->bits >= 8) {
@@ -86,6 +96,9 @@ ssize_t b64dec_update(B64Decoder *d, const char *in, size_t inlen, uint8_t *out)
 bool b64dec_finish(const B64Decoder *d) {
     // Leftover bits must be zero padding from a valid 2/3-char tail.
     if (d->err)
+        return false;
+    // One symbol alone carries 6 bits, not a byte; padding must fill the group.
+    if (d->quad == 1 || (d->pad && d->quad + d->pad != 4))
         return false;
     if (d->bits != 0 && (d->acc & ((1u << d->bits) - 1)) != 0)
         return false;

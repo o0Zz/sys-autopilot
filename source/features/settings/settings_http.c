@@ -60,6 +60,10 @@ static void handle_nickname(HttpRequest *req) {
         http_send_error(req->fd, 400, "missing non-empty 'nickname'");
         return;
     }
+    if (!settings_nickname_valid(name)) {
+        http_send_error(req->fd, 400, "'nickname' is longer than 32 characters");
+        return;
+    }
     if (!settings_set_nickname(name))
         http_send_error(req->fd, 500, "failed to set nickname");
     else
@@ -115,7 +119,8 @@ static void post_airplane(HttpRequest *req) {
                    "unreachable until wireless is re-enabled on the console\"}");
 }
 
-// GET|POST /settings/auto-time  {"autoTime":true|false}
+// GET|POST /settings/auto-time  {"autoTime":true|false}, or {"enabled":...} as
+// the set_auto_time tool takes it
 static void handle_auto_time(HttpRequest *req) {
     if (is_get(req)) {
         bool en = false;
@@ -130,6 +135,8 @@ static void handle_auto_time(HttpRequest *req) {
     if (!doc)
         return;
     int t = json_obj_get(doc, 0, "autoTime");
+    if (t < 0)
+        t = json_obj_get(doc, 0, "enabled");
     bool en;
     if (t < 0 || !json_get_bool(doc, t, &en)) {
         http_send_error(req->fd, 400, "missing boolean 'autoTime'");

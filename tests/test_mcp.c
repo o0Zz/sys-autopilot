@@ -18,11 +18,13 @@
 #include "features/files/files_http.h"
 #include "features/files/files_mcp.h"
 #include "features/input/input_mcp.h"
+#include "features/network/network.h"
 #include "features/network/network_mcp.h"
 #include "features/oauth/oauth_mcp.h"
 #include "features/power/power_mcp.h"
 #include "features/process/process_mcp.h"
 #include "features/screen/screen_mcp.h"
+#include "features/settings/settings.h"
 #include "features/settings/settings_mcp.h"
 #include "features/status/status_mcp.h"
 #include "features/titles/titles_mcp.h"
@@ -523,9 +525,10 @@ static void test_process_tools(void) {
     r = do_rpc(body);
     assert(strstr(r, "\"isError\":false"));
 
-    // Stopping something that is not running fails.
+    // Stopping something that is not running fails, and says so.
     r = do_rpc(body);
     assert(strstr(r, "\"isError\":true"));
+    assert(strstr(r, "690000000000000d is not running"));
 
     // Argument validation.
     r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":36,\"method\":\"tools/call\",\"params\":"
@@ -781,6 +784,8 @@ static void test_wait_for_process(void) {
     r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":93,\"method\":\"tools/call\","
                "\"params\":{\"name\":\"process_stop\",\"arguments\":"
                "{\"titleId\":\"0100000000005678\"}}}");
+    r = do_http("POST", "/process/stop", "{\"titleId\":\"0100000000005678\"}", 0);
+    assert(strstr(r, " 404 ") && strstr(r, "\"error\":\"not running\""));
     r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":94,\"method\":\"tools/call\","
                "\"params\":{\"name\":\"wait_for_process\",\"arguments\":"
                "{\"titleId\":\"0100000000005678\",\"state\":\"stopped\"}}}");
@@ -934,7 +939,75 @@ static void test_rest_fixes(void) {
     assert(strncmp(r, "HTTP/1.1 409 Conflict", 21) == 0);
     r = do_http("DELETE", "/files?path=/rest/a%22b.txt", NULL, 0);
     assert(strstr(r, "\"deleted\":\"/rest/a\\\"b.txt\""));
+
+    // A directory is deleted only once empty, and the refusal is a conflict.
+    r = do_http("DELETE", "/files?path=/rest", NULL, 0);
+    assert(strncmp(r, "HTTP/1.1 409", 12) == 0 && strstr(r, "directory not empty"));
+    do_http("DELETE", "/files?path=/rest/c.txt", NULL, 0);
+    r = do_http("DELETE", "/files?path=/rest", NULL, 0);
+    assert(strstr(r, "\"deleted\":\"/rest\""));
     printf("rest fixes ok\n");
+}
+
+static int g_request_hook_calls;
+static void count_request(void) { g_request_hook_calls++; }
+
+// Input the console would accept but then mangle, or report as a server error.
+static void test_validation(void) {
+    // Nickname: at most 32 characters, counted as characters, not bytes.
+    const char *r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":"
+                           "{\"name\":\"set_nickname\",\"arguments\":"
+                           "{\"nickname\":\"012345678901234567890123456789012\"}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "longer than 32 characters"));
+    char body[512], name[96] = "";
+    for (int i = 0; i < 32; i++)
+        strcat(name, "\xc3\xa9"); // é
+    snprintf(body, sizeof(body),
+             "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":"
+             "{\"name\":\"set_nickname\",\"arguments\":{\"nickname\":\"%s\"}}}", name);
+    r = do_rpc(body);
+    assert(strstr(r, "\"isError\":false"));
+
+    // Dates: the day must exist in its month.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"set_datetime\",\"arguments\":{\"year\":2026,\"month\":2,\"day\":30}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "invalid date/time fields"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"set_datetime\",\"arguments\":{\"year\":2028,\"month\":2,\"day\":29}}}");
+    assert(strstr(r, "\"isError\":false"));
+    DateTime dt = { .year = 2100, .month = 2, .day = 29 };
+    assert(!settings_datetime_valid(&dt));
+    dt.year = 2000;
+    assert(settings_datetime_valid(&dt));
+
+    // DNS: a malformed address is the caller's mistake, found before nifm.
+    char err[160];
+    assert(network_set_dns(false, "999.1.1.1", "", err, sizeof(err)) == NETWORK_INVALID);
+    assert(network_set_dns(false, "1.1.1.1", "8.8", err, sizeof(err)) == NETWORK_INVALID);
+    assert(network_http_status(NETWORK_INVALID) == 400);
+    assert(network_http_status(NETWORK_UNAVAILABLE) == 503);
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"set_dns\",\"arguments\":{\"primary\":\"1.2.3\"}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "invalid primary DNS"));
+
+    // upload_file content: JSON may escape '/' as \/; plain text is not base64.
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"upload_file\",\"arguments\":{\"path\":\"/v.bin\",\"content\":\"\\/\\/\\/\\/\"}}}");
+    assert(strstr(r, "\"isError\":false") && strstr(r, "wrote 3 bytes"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"upload_file\",\"arguments\":{\"path\":\"/v.bin\",\"content\":\"hello mcp\"}}}");
+    assert(strstr(r, "\"isError\":true") && strstr(r, "invalid base64"));
+    r = do_rpc("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":"
+               "{\"name\":\"upload_file\",\"arguments\":{\"path\":\"/v.bin\",\"content\":\"AB\\tCD\"}}}");
+    assert(strstr(r, "invalid base64 content"));
+    remove(FAKE_SD "/v.bin");
+
+    // Request hooks run before every routed request.
+    http_server_on_request(count_request);
+    int before = g_request_hook_calls;
+    do_http("GET", "/files?path=/", NULL, 0);
+    assert(g_request_hook_calls == before + 1);
+    printf("validation ok\n");
 }
 
 static Config g_cfg_for_oauth;
@@ -985,6 +1058,7 @@ int main(void) {
     test_type_text();
     test_crash_reports();
     test_rest_fixes();
+    test_validation();
     printf("all mcp tests passed\n");
     return 0;
 }

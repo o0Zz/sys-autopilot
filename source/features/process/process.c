@@ -40,7 +40,13 @@ bool process_parse_title_id(const char *s, uint64_t *out) {
 // time without reconnecting first. Without this the bare hiddbgInitialize()
 // below silently leaves g_hiddbgSrv zeroed, and every later HDLS call fails
 // with kernel InvalidHandle (0xe401) for the rest of the boot.
+//
+// hiddbgInitialize() is refcounted: calling it while the session is open only
+// bumps the count, and the next hiddbgExit() in process_start() would then
+// keep the session instead of handing it over. So only reopen a closed one.
 static void reopen_hiddbg(void) {
+    if (serviceIsActive(hiddbgGetServiceSession()))
+        return;
     if (R_FAILED(smInitialize()))
         return;
     Result rc = hiddbgInitialize();
@@ -50,8 +56,12 @@ static void reopen_hiddbg(void) {
 }
 
 static bool g_initialized;
+// The program process_start() last launched, while it runs. It holds what the
+// launch lent it: hid:dbg, and the system memory boost.
 static u64 g_last_pid;
 static u64 g_last_program_id;
+
+static void take_back(void);
 
 bool process_init(void) {
     Result rc = pmshellInitialize();
@@ -152,8 +162,11 @@ void process_status(uint64_t program_id, ProcessStatus *out) {
         pminfoExit();
         out->running = R_SUCCEEDED(rc) && resolved == program_id;
         out->pid = out->running ? g_last_pid : 0;
-        if (!out->running)
-            g_last_pid = 0;
+        if (!out->running) {
+            LOGI("process", "%016llx exited; taking back hid:dbg",
+                 (unsigned long long)program_id);
+            take_back();
+        }
         return;
     }
 
@@ -238,10 +251,34 @@ bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
     return true;
 }
 
+// The program process_start() launched is gone, stopped or exited on its own:
+// take back what the launch lent it, or input stays dead and the application
+// pool stays 64 MiB short until reboot.
+static void take_back(void) {
+    g_last_pid = 0;
+    if (g_boosted)
+        set_boost(0);
+    reopen_hiddbg();
+}
+
+void process_reclaim(void) {
+    if (g_last_pid == 0)
+        return;
+    ProcessStatus st;
+    process_status(g_last_program_id, &st); // takes back when it is gone
+}
+
 bool process_stop(uint64_t program_id, uint32_t *out_rc) {
     *out_rc = 0;
     if (!g_initialized)
         return false;
+
+    ProcessStatus st;
+    process_status(program_id, &st);
+    if (!st.running) {
+        *out_rc = PROCESS_RC_NOT_RUNNING;
+        return false;
+    }
 
     Result rc = pmshellTerminateProgram(program_id);
     if (R_FAILED(rc)) {
@@ -250,10 +287,9 @@ bool process_stop(uint64_t program_id, uint32_t *out_rc) {
         *out_rc = rc;
         return false;
     }
-    g_last_pid = 0;
-    if (g_boosted)
-        set_boost(0);
-    reopen_hiddbg(); // take hid:dbg back now that the module has released it
+    // Also when this program was not launched here: one that boot2 started
+    // may have held hid:dbg since boot, keeping ours from opening.
+    take_back();
     return true;
 }
 
@@ -321,11 +357,15 @@ bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
 
 bool process_stop(uint64_t program_id, uint32_t *out_rc) {
     *out_rc = 0;
-    if (!g_fake_running || g_fake_program_id != program_id)
+    if (!g_fake_running || g_fake_program_id != program_id) {
+        *out_rc = PROCESS_RC_NOT_RUNNING;
         return false;
+    }
     g_fake_running = false;
     return true;
 }
+
+void process_reclaim(void) {}
 
 bool process_restart(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
     process_stop(program_id, out_rc);

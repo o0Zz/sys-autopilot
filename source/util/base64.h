@@ -26,12 +26,16 @@ size_t b64url_encode(const uint8_t *in, size_t n, char *out);
 typedef struct {
     uint32_t acc;
     int bits;
+    uint8_t quad; // symbols in the current group of 4
+    uint8_t pad;  // '=' seen; nothing but more '=' may follow
     bool err;
 } B64Decoder;
 
 void b64dec_init(B64Decoder *d);
 
-// Decodes a chunk of base64 text. Whitespace is skipped; '=' padding ends the
+// Decodes a chunk of base64 text. Line breaks (CR, LF) are skipped; any other
+// character outside the alphabet, spaces included, is invalid. '=' padding
+// is optional, but when present it must complete the last group and end the
 // stream. out must hold at least (inlen / 4 + 1) * 3 bytes. Returns bytes
 // written, or -1 on invalid input (also latches d->err).
 ssize_t b64dec_update(B64Decoder *d, const char *in, size_t inlen, uint8_t *out);

@@ -31,6 +31,18 @@ static int g_public_count;
 static HttpTokenValidator g_token_validator;
 static const char *g_resource_metadata_path;
 
+static HttpRequestHook g_request_hooks[HTTP_MAX_REQUEST_HOOKS];
+static int g_request_hook_count;
+
+bool http_server_on_request(HttpRequestHook hook) {
+    if (g_request_hook_count >= HTTP_MAX_REQUEST_HOOKS) {
+        LOGW("http", "request hook table full");
+        return false;
+    }
+    g_request_hooks[g_request_hook_count++] = hook;
+    return true;
+}
+
 static bool add_route(const char *method, const char *path, HttpHandler handler,
                       bool prefix) {
     if (g_route_count >= HTTP_MAX_ROUTES) {
@@ -170,6 +182,8 @@ void http_server_dispatch(const Config *cfg, HttpRequest *req) {
         !authorized(cfg, req, &basic_cfg)) {
         http_send_unauthorized(req, basic_cfg, g_resource_metadata_path);
     } else {
+        for (int i = 0; i < g_request_hook_count; i++)
+            g_request_hooks[i]();
         route(req);
     }
     // The response is out: everything the handler took from request memory

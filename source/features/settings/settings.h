@@ -27,6 +27,11 @@ bool settings_set_theme(bool dark);
 bool settings_get_nickname(char *out, size_t outsz);
 bool settings_set_nickname(const char *name);
 
+// System Settings caps the nickname at 32 characters; set accepts more and
+// System Settings then shows a cut-off name. Shared by REST and MCP.
+#define SETTINGS_NICKNAME_MAX_CHARS 32
+bool settings_nickname_valid(const char *name);
+
 // --- screen brightness --------------------------------------------------------
 // Brightness is 0.0..1.0. Setting also applies it to the backlight immediately.
 bool settings_get_brightness(float *out);
@@ -71,6 +76,6 @@ bool settings_get_datetime(DateTime *out);
 // applied (timezone writes are rejected). Returns false if the write failed.
 bool settings_set_datetime(const DateTime *dt);
 
-// True when every field is in range (year 2000-2100). Shared by the REST and
-// MCP front-ends so both reject the same input.
+// True when every field is in range (year 2000-2100, day within its month).
+// Shared by the REST and MCP front-ends so both reject the same input.
 bool settings_datetime_valid(const DateTime *dt);

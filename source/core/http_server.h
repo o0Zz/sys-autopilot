@@ -39,6 +39,13 @@ void http_server_set_token_validator(HttpTokenValidator validator,
 typedef void (*HttpSleepHook)(void);
 bool http_server_on_sleep(HttpSleepHook hook);
 
+// Called before every authorized request is routed. Features that lend a
+// resource to another program use it to notice the program is gone and take
+// the resource back.
+#define HTTP_MAX_REQUEST_HOOKS 2
+typedef void (*HttpRequestHook)(void);
+bool http_server_on_request(HttpRequestHook hook);
+
 // --- waiting inside a handler ----------------------------------------------------
 // The wait tools block their handler for up to HTTP_MAX_WAIT_MS. They sleep
 // through http_server_wait_ms(), which keeps calling the idle hook. The

@@ -53,13 +53,29 @@ int jstream_feed(Jstream *js, const char *data, size_t len) {
 
         // --- Diverted content string: stream until the closing quote. ---
         if (js->divert) {
+            // The escapes base64 text can carry: \/ for '/' (some encoders
+            // escape every slash) and \n, \r for line-wrapped base64. Any
+            // other escape stands for a character base64 never uses.
+            if (js->esc) {
+                js->esc = false;
+                const char *unescaped = c == '/' ? "/" : c == 'n' ? "\n" : c == 'r' ? "\r" : NULL;
+                if (!unescaped)
+                    return js->err = JSTREAM_ECONTENT;
+                if (js->sink(unescaped, 1, js->sink_ctx) != 0)
+                    return js->err = JSTREAM_ESINK;
+                i++;
+                continue;
+            }
             if (c == '"') {
                 js->divert = false;
                 i++;
                 continue;
             }
-            if (c == '\\')
-                return js->err = JSTREAM_ECONTENT;
+            if (c == '\\') {
+                js->esc = true;
+                i++;
+                continue;
+            }
             // Batch: find the end of this clean run.
             size_t start = i;
             while (i < len && data[i] != '"' && data[i] != '\\')

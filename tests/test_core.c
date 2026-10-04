@@ -46,9 +46,22 @@ static void test_base64(void) {
     assert(b64dec_finish(&d));
     assert(total == 6 && memcmp(out, "foobar", 6) == 0);
 
-    // Invalid character rejected.
+    // Invalid character rejected, spaces included (plain text is not base64).
     b64dec_init(&d);
     assert(b64dec_update(&d, "Zm!v", 4, out) < 0);
+    char text[16];
+    assert(b64_decode("hello mcp", text, sizeof(text)) == 0);
+    assert(b64_decode("Zm9v\tYmFy", text, sizeof(text)) == 0);
+
+    // Line breaks are skipped; padding is optional but must be right.
+    assert(b64_decode("Zm9v\r\nYmFy\n", text, sizeof(text)) == 6);
+    assert(b64_decode("Zm8", text, sizeof(text)) == 2 && memcmp(text, "fo", 2) == 0);
+    assert(b64_decode("Zg", text, sizeof(text)) == 1);
+    assert(b64_decode("Zm9vY", text, sizeof(text)) == 0);    // lone symbol
+    assert(b64_decode("Zm8==", text, sizeof(text)) == 0);    // too much padding
+    assert(b64_decode("Zg=", text, sizeof(text)) == 0);      // too little
+    assert(b64_decode("Zg==Zg==", text, sizeof(text)) == 0); // data after padding
+    assert(b64_decode("=", text, sizeof(text)) == 0);
 
     // Chunked encode (multiple of 3) equals whole-buffer encode.
     uint8_t data[300];
@@ -193,9 +206,18 @@ static void test_jstream(void) {
                        "\"content\":\"Qg==\"}}}";
     assert(run_jstream(src4, 4096, doc, sizeof(doc), &doc_len, &cs, &found) == JSTREAM_EDUP);
 
-    // Escape inside content (invalid for base64) rejected.
-    const char *src5 = "{\"params\":{\"arguments\":{\"content\":\"AB\\nCD\"}}}";
-    assert(run_jstream(src5, 4096, doc, sizeof(doc), &doc_len, &cs, &found) == JSTREAM_ECONTENT);
+    // The escapes base64 can carry are unescaped, even split across chunks.
+    const char *src5 = "{\"params\":{\"arguments\":{\"content\":\"AB\\/\\/\\nCD\\r\\n\"}}}";
+    for (int i = 0; i < 5; i++) {
+        assert(run_jstream(src5, steps[i], doc, sizeof(doc), &doc_len, &cs, &found) == 0);
+        assert(found && cs.len == 9 && memcmp(cs.data, "AB//\nCD\r\n", 9) == 0);
+    }
+
+    // Any other escape stands for a character base64 never uses.
+    const char *src5b = "{\"params\":{\"arguments\":{\"content\":\"AB\\tCD\"}}}";
+    assert(run_jstream(src5b, 4096, doc, sizeof(doc), &doc_len, &cs, &found) == JSTREAM_ECONTENT);
+    const char *src5c = "{\"params\":{\"arguments\":{\"content\":\"AB\\u002fCD\"}}}";
+    assert(run_jstream(src5c, 4096, doc, sizeof(doc), &doc_len, &cs, &found) == JSTREAM_ECONTENT);
 
     // Reduced-document overflow.
     char small[16];

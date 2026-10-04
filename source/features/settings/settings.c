@@ -2,10 +2,27 @@
 
 #include <stdio.h>
 
+static int days_in_month(int year, int month) {
+    static const int kDays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    bool leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    return month == 2 && leap ? 29 : kDays[month - 1];
+}
+
 bool settings_datetime_valid(const DateTime *dt) {
-    return dt->month >= 1 && dt->month <= 12 && dt->day >= 1 && dt->day <= 31 &&
+    if (dt->year < 2000 || dt->year > 2100 || dt->month < 1 || dt->month > 12)
+        return false;
+    return dt->day >= 1 && dt->day <= days_in_month(dt->year, dt->month) &&
            dt->hour >= 0 && dt->hour <= 23 && dt->minute >= 0 && dt->minute <= 59 &&
-           dt->second >= 0 && dt->second <= 59 && dt->year >= 2000 && dt->year <= 2100;
+           dt->second >= 0 && dt->second <= 59;
+}
+
+bool settings_nickname_valid(const char *name) {
+    // Count characters, not bytes: UTF-8 continuation bytes are 10xxxxxx.
+    int chars = 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++)
+        if ((*p & 0xC0) != 0x80)
+            chars++;
+    return chars >= 1 && chars <= SETTINGS_NICKNAME_MAX_CHARS;
 }
 
 #ifdef __SWITCH__

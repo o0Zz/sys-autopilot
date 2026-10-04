@@ -130,7 +130,10 @@ static void post_stop(HttpRequest *req) {
 
     uint32_t rc = 0;
     if (!process_stop(tid, &rc)) {
-        send_process_error(req, "terminate failed", rc);
+        if (rc == PROCESS_RC_NOT_RUNNING)
+            http_send_json(req->fd, 404, "{\"ok\":false,\"error\":\"not running\"}");
+        else
+            send_process_error(req, "terminate failed", rc);
         return;
     }
     http_send_json(req->fd, 200, "{\"ok\":true,\"titleId\":\"%016llx\"}",

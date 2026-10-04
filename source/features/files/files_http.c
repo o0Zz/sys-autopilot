@@ -224,7 +224,8 @@ static void delete_files(HttpRequest *req) {
 
     const char *err = NULL;
     if (!files_delete_path(fspath, &err)) {
-        http_send_error(req->fd, strstr(err, "no such") ? 404 : 500, err);
+        int code = strstr(err, "no such") ? 404 : strstr(err, "not empty") ? 409 : 500;
+        http_send_error(req->fd, code, err);
         return;
     }
     http_send_json(req->fd, 200, "{\"deleted\":\"%s\"}",

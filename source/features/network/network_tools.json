@@ -10,7 +10,7 @@
     },
     {
       "name": "set_dns",
-      "description": "Set the active connection's DNS servers. Pass 'primary' (and optional 'secondary') as IPv4 strings to set manual DNS, or 'automatic':true to revert to DHCP. Useful for pointing the console at a custom/black-hole DNS (e.g. 90DNS) to block Nintendo servers while staying on the LAN.",
+      "description": "Set the active connection's DNS servers. Pass 'primary' (and optional 'secondary') as IPv4 strings to set manual DNS, or 'automatic':true to revert to DHCP. Useful for pointing the console at a custom/black-hole DNS (e.g. 90DNS) to block Nintendo servers while staying on the LAN. The console reconnects to apply a change: the server can be unreachable for a few seconds afterwards (up to about 12 s for automatic).",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -393,8 +393,9 @@ static void handle_post(HttpRequest *req) {
 
     if (jerr || n < 0) {
         upload_cleanup();
-        const char *msg = (jerr == JSTREAM_EDOC) ? "request too large"
-                                                 : "parse error";
+        const char *msg = (jerr == JSTREAM_EDOC)     ? "request too large"
+                        : (jerr == JSTREAM_ECONTENT) ? "invalid base64 content"
+                                                     : "parse error";
         send_rpc_error(req->fd, "null", -32700, msg);
         return;
     }

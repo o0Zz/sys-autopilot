@@ -124,6 +124,8 @@ void features_register(const Config *cfg) {
 #endif
 #ifdef FEATURE_PROCESS
     process_http_register();
+    // A program started through /process/start holds hid:dbg until it exits.
+    http_server_on_request(process_reclaim);
 #endif
 #ifdef FEATURE_TITLES
     titles_http_register();

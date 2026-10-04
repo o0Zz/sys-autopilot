@@ -163,9 +163,13 @@ curl -X POST http://<ip>:4150/process/start -d '{"titleId":"690000000000000d"}'
 
 A program does not need `flags/boot2.flag` to be started this way. Leave the
 flag off while developing: a build that crashes at boot then cannot take the
-console down, and you can still upload the fix. `stop` is a hard kill.
-`start` refuses a program that is already running and answers 409 with its
-pid; use `restart` for that.
+console down, and you can still upload the fix. `stop` is a hard kill, and
+answers 404 for a program that is not running. `start` refuses a program that
+is already running and answers 409 with its pid; use `restart` for that.
+
+A started program gets the virtual controller service (`hid:dbg`), so it can
+drive pads as sys-con does. The input endpoints fail until it exits or is
+stopped. The server then takes the service back by itself.
 
 ## REST API
 
@@ -195,6 +199,7 @@ POST /process/start | /process/stop | /process/restart  {"titleId":"<id>"}
 POST|PUT /install[?storage=sd|nand]               stream an NSP or XCI (not NSZ)
 GET  /titles                                      installed applications
 GET|POST /network/dns                             {"primary":"…","secondary":"…"} or {"automatic":true}
+                                                  a change reconnects the console: 503 for a few seconds
 GET|POST /settings/{theme,nickname,brightness,volume,auto-time,datetime}
 POST /settings/airplane                           one-way, see above
 POST /power/sleep | /power/restart | /power/off

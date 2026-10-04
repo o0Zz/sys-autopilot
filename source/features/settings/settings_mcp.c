@@ -50,6 +50,10 @@ static void tool_set_nickname(McpCall *call) {
         mcp_reply_error(call, "missing non-empty 'nickname'");
         return;
     }
+    if (!settings_nickname_valid(name)) {
+        mcp_reply_error(call, "'nickname' is longer than 32 characters");
+        return;
+    }
     if (!settings_set_nickname(name)) {
         mcp_reply_error(call, "failed to set nickname");
         return;

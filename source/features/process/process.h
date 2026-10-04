@@ -53,9 +53,17 @@ int process_list(ProcessEntry *out, int max, uint32_t *out_rc);
 // PROCESS_RC_ALREADY_RUNNING and *out_pid its pid.
 bool process_start(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc);
 
-// Terminates the program. Terminating one that is not running is a failure,
-// reported through *out_rc.
+// *out_rc from process_stop() when the program is not running.
+#define PROCESS_RC_NOT_RUNNING 0xfffffffeu
+
+// Terminates the program. Terminating one that is not running fails with
+// *out_rc PROCESS_RC_NOT_RUNNING; other failures store the Horizon result.
 bool process_stop(uint64_t program_id, uint32_t *out_rc);
+
+// process_start() hands hid:dbg and a system memory boost to the program it
+// launches. Takes them back once that program has exited on its own. Run
+// before every request (http_server_on_request) so input works again.
+void process_reclaim(void);
 
 // Stop (if running), wait for it to actually disappear, then start. Returns
 // false and sets *out_rc if the program is still running after the grace

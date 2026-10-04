@@ -110,8 +110,11 @@ static void tool_process_stop(McpCall *call) {
     uint32_t rc = 0;
     char msg[160];
     if (!process_stop(tid, &rc)) {
-        snprintf(msg, sizeof(msg), "failed to terminate %016llx (rc 0x%08x)",
-                 (unsigned long long)tid, rc);
+        if (rc == PROCESS_RC_NOT_RUNNING)
+            snprintf(msg, sizeof(msg), "%016llx is not running", (unsigned long long)tid);
+        else
+            snprintf(msg, sizeof(msg), "failed to terminate %016llx (rc 0x%08x)",
+                     (unsigned long long)tid, rc);
         mcp_reply_error(call, msg);
         return;
     }

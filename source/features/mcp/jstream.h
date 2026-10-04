@@ -19,7 +19,7 @@
 // Errors returned by jstream_feed / jstream_finish.
 #define JSTREAM_EDOC     -1  // reduced document exceeds the buffer cap
 #define JSTREAM_EDEPTH   -2  // nesting too deep / unbalanced
-#define JSTREAM_ECONTENT -3  // escape sequence inside content (invalid base64)
+#define JSTREAM_ECONTENT -3  // escape in content other than \/ \n \r (never base64)
 #define JSTREAM_ESINK    -4  // sink callback reported failure
 #define JSTREAM_EDUP     -5  // multiple content fields
 #define JSTREAM_EPARTIAL -6  // input ended mid-string / mid-container

@@ -15,13 +15,27 @@ typedef struct {
     char secondary[16];  // dotted IPv4 ("" if unset)
 } DnsConfig;
 
-// Read the current connection's DNS configuration. Returns true on success.
-// (Host build: a stub that reports failure.)
-bool network_get_dns(DnsConfig *out, char *err, size_t errsz);
+typedef enum {
+    NETWORK_OK,
+    NETWORK_INVALID,     // bad argument (HTTP 400)
+    NETWORK_UNAVAILABLE, // no active connection, e.g. reconnecting (HTTP 503)
+    NETWORK_FAILED,      // anything else (HTTP 500)
+} NetworkResult;
+
+// Read the current connection's DNS configuration. Any result but NETWORK_OK
+// leaves a message in err. (Host build: a stub that reports failure.)
+NetworkResult network_get_dns(DnsConfig *out, char *err, size_t errsz);
 
 // Set the active profile's DNS. If automatic is true, reverts to DHCP DNS and
 // primary/secondary are ignored. Otherwise primary must be a valid dotted IPv4;
-// secondary may be NULL/empty. Persists to the saved network profile. Returns
-// true on success.
-bool network_set_dns(bool automatic, const char *primary, const char *secondary,
-                     char *err, size_t errsz);
+// secondary may be NULL/empty. Persists to the saved network profile, which
+// makes the console reconnect: the connection drops for a few seconds right
+// after a success.
+NetworkResult network_set_dns(bool automatic, const char *primary, const char *secondary,
+                              char *err, size_t errsz);
+
+// The HTTP status for a NetworkResult.
+static inline int network_http_status(NetworkResult r) {
+    return r == NETWORK_OK ? 200 : r == NETWORK_INVALID ? 400
+         : r == NETWORK_UNAVAILABLE ? 503 : 500;
+}

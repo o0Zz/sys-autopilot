@@ -4,11 +4,12 @@
 #include "features/network/network_tools.h"
 
 #include <stdio.h>
+#include <string.h>
 
 static void tool_get_dns(McpCall *call) {
     DnsConfig c;
-    char err[96];
-    if (!network_get_dns(&c, err, sizeof(err))) {
+    char err[160];
+    if (network_get_dns(&c, err, sizeof(err)) != NETWORK_OK) {
         mcp_reply_error(call, err);
         return;
     }
@@ -33,17 +34,19 @@ static void tool_set_dns(McpCall *call) {
         mcp_reply_error(call, "provide 'primary' (IPv4) or set 'automatic':true");
         return;
     }
-    char err[96];
-    if (!network_set_dns(automatic, primary, secondary, err, sizeof(err))) {
+    char err[160];
+    if (network_set_dns(automatic, primary, secondary, err, sizeof(err)) != NETWORK_OK) {
         mcp_reply_error(call, err);
         return;
     }
-    char text[192];
+    char text[256];
     if (automatic)
         snprintf(text, sizeof(text), "DNS set to automatic (DHCP)");
     else
         snprintf(text, sizeof(text), "DNS set to manual: %s%s%s", primary,
                  secondary[0] ? ", " : "", secondary);
+    snprintf(text + strlen(text), sizeof(text) - strlen(text),
+             ". The console reconnects to apply it: wait a few seconds before the next call.");
     mcp_reply_text(call, text);
 }
 

@@ -143,8 +143,21 @@ bool files_delete_path(const char *fspath, const char **err) {
         return false;
     }
     if (S_ISDIR(st.st_mode)) {
+        // Checked by hand: the console's rmdir() does not report ENOTEMPTY.
+        DIR *d = opendir(fspath);
+        bool empty = true;
+        if (d) {
+            struct dirent *e;
+            while (empty && (e = readdir(d)) != NULL)
+                empty = strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0;
+            closedir(d);
+        }
+        if (!empty) {
+            *err = "directory not empty";
+            return false;
+        }
         if (rmdir(fspath) != 0) {
-            *err = "rmdir failed (directory not empty?)";
+            *err = "rmdir failed";
             return false;
         }
     } else if (remove(fspath) != 0) {
