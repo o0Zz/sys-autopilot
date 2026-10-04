@@ -34,7 +34,6 @@
         "ns:am2",
         "es",
         "pm:shell",
-        "pm:dmnt",
         "pm:info"
     ],
     "service_host": [],

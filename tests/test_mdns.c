@@ -3,8 +3,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "core/app.h"
 #include "core/config.h"
 #include "core/mdns.h"
+
+const char *app_version(void) { return "0.0.0-dev"; }
 
 // --- tiny DNS reader for assertions -------------------------------------------
 

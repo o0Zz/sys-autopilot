@@ -11,8 +11,6 @@ static bool g_have_last_addr;
 static uint32_t g_last_addr; // last sampled s_addr (0 = none/loopback)
 
 bool netif_init(void) {
-    if (g_nifm_ready)
-        return true;
     // Open nifm as Admin (a superset of User). libnx's nifmInitialize is
     // refcounted and ignores the service type on subsequent calls, so the FIRST
     // init in the process decides the session type. Using Admin here means

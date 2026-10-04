@@ -25,7 +25,7 @@ typedef struct {
     char message[256];   // human-readable result or error detail
     uint64_t title_id;   // installed application/base id (0 if unknown)
     uint32_t version;    // content-meta version
-    int http_status;     // suggested HTTP status (200 / 4xx / 5xx)
+    int http_status;     // HTTP status for a failure (4xx / 5xx)
 } InstallResult;
 
 // --- PFS0 parsing (pure, host-testable) --------------------------------------

@@ -64,12 +64,9 @@ static ssize_t io_recv(int fd, void *buf, size_t len) {
 
 static const char *status_reason(int code) {
     switch (code) {
-        case 100: return "Continue";
         case 200: return "OK";
         case 201: return "Created";
         case 202: return "Accepted";
-        case 204: return "No Content";
-        case 302: return "Found";
         case 400: return "Bad Request";
         case 401: return "Unauthorized";
         case 403: return "Forbidden";
@@ -407,7 +404,6 @@ void http_send_unauthorized(const HttpRequest *req, bool offer_basic,
         cn += snprintf(challenges + cn, sizeof(challenges) - (size_t)cn,
                        "WWW-Authenticate: Bearer realm=\"sys-autopilot\"\r\n");
     }
-    challenges[cn] = '\0';
     send_header_extra(req->fd, 401, "application/json", strlen(body), challenges);
     http_write_all(req->fd, body, strlen(body));
 }

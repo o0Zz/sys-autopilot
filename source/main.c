@@ -16,10 +16,6 @@
 // heap is actually used.
 #define INNER_HEAP_SIZE 0x100000
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 u32 __nx_applet_type = AppletType_None;
 u32 __nx_fs_num_sessions = 1;
 
@@ -160,10 +156,6 @@ void __appExit(void)
     fsdevUnmountAll();
     fsExit();
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 int main(int argc, char* argv[])
 {

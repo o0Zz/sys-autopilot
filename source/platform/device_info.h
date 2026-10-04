@@ -11,8 +11,8 @@ typedef struct {
 
 // Queries the system services (set:sys, spl) and caches the results. MUST be
 // called from __appInit while the 'sm' session is still open, because the
-// underlying smGetService calls fail once smExit() has run. Safe to call more
-// than once (subsequent calls are no-ops). No-op on host builds.
+// underlying smGetService calls fail once smExit() has run. No-op on host
+// builds.
 void device_info_init(void);
 
 // Returns the cached device facts gathered by device_info_init(). Never NULL;

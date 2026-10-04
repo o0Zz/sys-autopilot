@@ -61,8 +61,7 @@ int jstream_feed(Jstream *js, const char *data, size_t len) {
                 const char *unescaped = c == '/' ? "/" : c == 'n' ? "\n" : c == 'r' ? "\r" : NULL;
                 if (!unescaped)
                     return js->err = JSTREAM_ECONTENT;
-                if (js->sink(unescaped, 1, js->sink_ctx) != 0)
-                    return js->err = JSTREAM_ESINK;
+                js->sink(unescaped, 1, js->sink_ctx);
                 i++;
                 continue;
             }
@@ -80,8 +79,7 @@ int jstream_feed(Jstream *js, const char *data, size_t len) {
             size_t start = i;
             while (i < len && data[i] != '"' && data[i] != '\\')
                 i++;
-            if (js->sink(data + start, i - start, js->sink_ctx) != 0)
-                return js->err = JSTREAM_ESINK;
+            js->sink(data + start, i - start, js->sink_ctx);
             continue;
         }
 

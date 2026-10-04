@@ -31,7 +31,7 @@ bool process_parse_title_id(const char *s, uint64_t *out) {
 
 // How long process_restart() waits for a terminated program to disappear
 // before giving up. Termination is not observably instantaneous: pm returns
-// once it has asked the kernel to kill the process, and pm:dmnt keeps
+// once it has asked the kernel to kill the process, and pm keeps
 // resolving the program id until the process object is actually reaped.
 #define RESTART_GRACE_NS   (3ULL * 1000000000ULL)
 #define RESTART_POLL_NS    (50ULL * 1000000ULL)
@@ -170,15 +170,7 @@ void process_status(uint64_t program_id, ProcessStatus *out) {
         return;
     }
 
-    u64 pid = 0;
-    Result rc = R_FAILED(pmdmntInitialize()) ? MAKERESULT(Module_Libnx, LibnxError_NotFound)
-                                             : pmdmntGetProcessId(&pid, program_id);
-    pmdmntExit();
-    // pm:dmnt is normally taken (see above), and pm does not distinguish "not
-    // running" from other lookup errors in a way worth surfacing, so any
-    // failure falls back to scanning every process.
-    if (R_FAILED(rc))
-        pid = find_pid(program_id);
+    u64 pid = find_pid(program_id);
     out->running = pid != 0;
     out->pid = pid;
 }

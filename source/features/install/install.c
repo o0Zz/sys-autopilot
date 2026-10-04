@@ -452,7 +452,6 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     u8 *cnmt_nca = g_w->cnmt_nca;
     size_t cnmt_nca_size = 0;
     NcmContentId meta_cid = {0};
-    bool have_meta_cid = false;
     u8 *tik_buf = g_w->tik_buf; size_t tik_size = 0;
     u8 *cert_buf = g_w->cert_buf; size_t cert_size = 0;
 
@@ -487,7 +486,6 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
             if (!content_id_from_name(name, &meta_cid)) {
                 fail(out, 400, "bad cnmt nca filename: %s", name); failed = true; break;
             }
-            have_meta_cid = true;
             Result rc = write_content(&cs, &meta_cid, cnmt_nca_size, read_fn, ctx,
                                       cnmt_nca, cnmt_nca_size, true);
             if (R_FAILED(rc)) { fail(out, 500, "write meta nca failed (0x%x)", rc); failed = true; break; }
@@ -530,7 +528,7 @@ static bool install_entries(InstallReadFn read_fn, void *ctx, uint64_t consumed,
     u8 *ext_hdr = g_w->ext_hdr;
     u16 ext_hdr_size = 0;
 
-    if (!failed && (cnmt_nca_size == 0 || !have_meta_cid)) {
+    if (!failed && cnmt_nca_size == 0) {
         fail(out, 400, "no cnmt.nca in NSP"); failed = true;
     }
     if (!failed) {
@@ -743,7 +741,6 @@ static bool install_xci(InstallReadFn read_fn, void *ctx, NcmStorageId sid,
 static bool install_stream_with(InstallReadFn read_fn, void *ctx,
                                InstallStorage storage, InstallResult *out) {
     memset(out, 0, sizeof(*out));
-    out->http_status = 200;
 
     if (!g_ncm_ok || !g_ns_ok) {
         fail(out, 500, "install services unavailable");

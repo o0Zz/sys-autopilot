@@ -16,6 +16,8 @@
 #include "features/oauth/oauth.h"
 #include "util/sha256.h"
 
+const char *app_version(void) { return "0.0.0-dev"; }
+
 static Config g_test_cfg;
 
 // Sends one HTTP request through a socketpair to the router (with the routes

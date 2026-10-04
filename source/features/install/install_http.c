@@ -40,7 +40,7 @@ static void handle_install(HttpRequest *req) {
                        "{\"ok\":true,\"titleId\":\"%016llx\",\"version\":%u,\"message\":\"%s\"}",
                        (unsigned long long)res.title_id, res.version, esc);
     } else {
-        http_send_json(req->fd, res.http_status ? res.http_status : 500,
+        http_send_json(req->fd, res.http_status,
                        "{\"ok\":false,\"error\":\"%s\"}", esc);
     }
 }

@@ -13,8 +13,9 @@
 static char g_firmware[16];
 static char g_atmosphere[16];
 static char g_serial[0x18];
-static DeviceInfo g_info;
-static bool g_ready;
+static DeviceInfo g_info = {
+    .model = "unknown", .firmware = "", .atmosphere = "", .serial = "",
+};
 
 static const char *model_name(SetSysProductModel m) {
     switch (m) {
@@ -34,14 +35,6 @@ static const char *model_name(SetSysProductModel m) {
 }
 
 void device_info_init(void) {
-    if (g_ready)
-        return;
-
-    g_info.model = "unknown";
-    g_info.firmware = "";
-    g_info.atmosphere = "";
-    g_info.serial = "";
-
     // OS firmware version is already cached at boot via hosversionSet().
     u32 hv = hosversionGet();
     if (hv != 0) {
@@ -78,18 +71,9 @@ void device_info_init(void) {
         }
         splExit();
     }
-
-    g_ready = true;
 }
 
 const DeviceInfo *device_info_get(void) {
-    if (!g_ready) {
-        // Not initialized (shouldn't happen in normal flow); return safe defaults.
-        static const DeviceInfo empty = {
-            .model = "unknown", .firmware = "", .atmosphere = "", .serial = "",
-        };
-        return &empty;
-    }
     return &g_info;
 }
 

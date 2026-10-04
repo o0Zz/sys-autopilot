@@ -12,12 +12,9 @@ Result nsext_init(void) {
     Result rc = nsInitialize();
     if (R_FAILED(rc))
         return rc;
-    // On 3.0.0+ the record commands live behind GetApplicationManagerInterface;
-    // earlier the top-level ns:am session is used directly.
-    if (hosversionAtLeast(3, 0, 0))
-        rc = nsGetApplicationManagerInterface(&g_ns_app);
-    else
-        g_ns_app = *nsGetServiceSession_ApplicationManagerInterface();
+    // The record commands live behind GetApplicationManagerInterface (3.0.0+;
+    // earlier firmware needs ns:am, which the NPDM does not grant).
+    rc = nsGetApplicationManagerInterface(&g_ns_app);
     if (R_FAILED(rc)) {
         nsExit();
         return rc;

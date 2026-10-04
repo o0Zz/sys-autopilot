@@ -177,9 +177,6 @@ static size_t append_sanitized(char *out, size_t cap, size_t len, const char *s)
 
 const char *config_hostname(const Config *cfg, const char *serial,
                             char *out, size_t cap) {
-    if (cap == 0)
-        return out;
-
     if (cfg->hostname[0] != '\0') {
         snprintf(out, cap, "%s", cfg->hostname);
         return out;

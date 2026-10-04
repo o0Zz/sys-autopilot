@@ -1,15 +1,11 @@
 #include "core/mdns.h"
+#include "core/app.h"
 #include "platform/device_info.h"
 #include "platform/netif.h"
 #include "core/log.h"
 
 #include <stdio.h>
 #include <string.h>
-
-// Injected by the Makefile (git tag or commit hash).
-#ifndef APP_VERSION
-#define APP_VERSION "0.0.0-dev"
-#endif
 
 // TXT pairs contributed by features (e.g. "path=/mcp").
 #define MAX_EXTRA_TXT 4
@@ -79,7 +75,7 @@ static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
 
     // DNS-SD TXT key=value pairs. Each must be <=255 bytes.
     char version[48], firmware[48], model[48], ams[48];
-    snprintf(version,  sizeof(version),  "version=%s", APP_VERSION);
+    snprintf(version,  sizeof(version),  "version=%s", app_version());
     snprintf(model,    sizeof(model),    "model=%s", di->model);
     snprintf(firmware, sizeof(firmware), "firmware=%s", di->firmware);
     snprintf(ams,      sizeof(ams),      "atmosphere=%s", di->atmosphere);

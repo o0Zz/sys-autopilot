@@ -131,13 +131,12 @@ typedef struct {
     int calls;
 } CaptureSink;
 
-static int capture_sink(const char *data, size_t len, void *ctx) {
+static void capture_sink(const char *data, size_t len, void *ctx) {
     CaptureSink *cs = ctx;
     assert(cs->len + len < sizeof(cs->data));
     memcpy(cs->data + cs->len, data, len);
     cs->len += len;
     cs->calls++;
-    return 0;
 }
 
 // Feeds src through jstream in chunks of `step` bytes.

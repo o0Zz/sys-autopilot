@@ -138,7 +138,6 @@ static char *read_small_body(HttpRequest *req, size_t cap) {
 static char g_tokens[MAX_TOKENS][TOKEN_HEX_LEN + 1];
 static int g_token_count;
 static time_t g_tokens_mtime;
-static bool g_tokens_loaded;
 
 // A tokens.txt line's first whitespace-delimited field is the token; the rest
 // is comment. Returns the token's length and points *tok at it.
@@ -151,7 +150,6 @@ static size_t line_token(char *line, char **tok) {
 
 static void tokens_load(void) {
     g_token_count = 0;
-    g_tokens_loaded = true;
 
     struct stat st;
     if (stat(OAUTH_TOKENS_PATH, &st) == 0)
@@ -178,7 +176,7 @@ static void tokens_load(void) {
 static void tokens_refresh(void) {
     struct stat st;
     time_t mtime = (stat(OAUTH_TOKENS_PATH, &st) == 0) ? st.st_mtime : 0;
-    if (!g_tokens_loaded || mtime != g_tokens_mtime)
+    if (mtime != g_tokens_mtime)
         tokens_load();
 }
 
@@ -327,26 +325,19 @@ static AuthCode *code_take(const char *code) {
 // the issuer always matches the client's view). When the Host header is
 // absent, falls back to the configured mDNS hostname so metadata is still
 // usable for clients that discovered us via DNS-SD.
-static bool base_url(const HttpRequest *req, char *out, size_t outsz) {
+static void base_url(const HttpRequest *req, char *out, size_t outsz) {
     if (req->host[0] != '\0') {
         snprintf(out, outsz, "http://%s", req->host);
-        return true;
+        return;
     }
-    if (g_cfg) {
-        char name[64];
-        config_hostname(g_cfg, device_info_get()->serial, name, sizeof(name));
-        snprintf(out, outsz, "http://%s.local:%d", name, g_cfg->port);
-        return true;
-    }
-    return false;
+    char name[64];
+    config_hostname(g_cfg, device_info_get()->serial, name, sizeof(name));
+    snprintf(out, outsz, "http://%s.local:%d", name, g_cfg->port);
 }
 
 static void handle_protected_resource(HttpRequest *req) {
     char base[160];
-    if (!base_url(req, base, sizeof(base))) {
-        http_send_error(req->fd, 400, "missing Host header");
-        return;
-    }
+    base_url(req, base, sizeof(base));
     http_send_json(req->fd, 200,
                    "{\"resource\":\"%s/mcp\","
                    "\"authorization_servers\":[\"%s\"],"
@@ -356,10 +347,7 @@ static void handle_protected_resource(HttpRequest *req) {
 
 static void handle_as_metadata(HttpRequest *req) {
     char base[160];
-    if (!base_url(req, base, sizeof(base))) {
-        http_send_error(req->fd, 400, "missing Host header");
-        return;
-    }
+    base_url(req, base, sizeof(base));
     http_send_json(req->fd, 200,
                    "{\"issuer\":\"%s\","
                    "\"authorization_endpoint\":\"%s/oauth/authorize\","
@@ -486,7 +474,7 @@ static void send_login_page(HttpRequest *req, const char *error,
 }
 
 static bool creds_configured(void) {
-    return g_cfg && config_basic_enabled(g_cfg);
+    return config_basic_enabled(g_cfg);
 }
 
 // Basic validation: non-empty, no whitespace/control chars (also prevents

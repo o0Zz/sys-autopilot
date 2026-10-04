@@ -19,10 +19,9 @@
 // Socket read size while streaming the request body through jstream.
 #define MCP_READ_CHUNK 0x2000
 
-// Decode buffer for streamed content: holds the decode of up to
-// UPLOAD_MAX_INPUT base64 chars ((n/4+1)*3 must fit).
-#define UPLOAD_DECODE_SIZE 0x8000
-#define UPLOAD_MAX_INPUT   0xA000
+// Decode buffer for streamed content. jstream hands the sink at most one
+// fed chunk, so it holds the decode of MCP_READ_CHUNK base64 chars.
+#define UPLOAD_DECODE_SIZE ((MCP_READ_CHUNK / 4 + 1) * 3)
 
 // Temp destination for streamed upload content (renamed into place on
 // success, deleted otherwise).
@@ -63,18 +62,18 @@ typedef struct {
 
 static UploadCtx g_upload;
 
-// Note: failures (bad base64, write error) latch u->failed but return 0 so
-// the rest of the request still streams through and the JSON-RPC layer can
+// Note: failures (bad base64, write error) latch u->failed and drain the
+// rest so the request still streams through and the JSON-RPC layer can
 // report a proper in-band tool error instead of a protocol error.
-static int upload_sink(const char *data, size_t len, void *ctx) {
+static void upload_sink(const char *data, size_t len, void *ctx) {
     UploadCtx *u = ctx;
     if (u->failed)
-        return 0; // keep draining
+        return; // keep draining
     if (!u->decbuf) {
         u->decbuf = request_alloc(u->req, UPLOAD_DECODE_SIZE);
         if (!u->decbuf) {
             u->failed = true;
-            return 0;
+            return;
         }
     }
     if (!u->f) {
@@ -87,21 +86,15 @@ static int upload_sink(const char *data, size_t len, void *ctx) {
         u->f = fopen(MCP_UPLOAD_TMP, "wb");
         if (!u->f) {
             u->failed = true;
-            return 0;
+            return;
         }
     }
-    while (len > 0) {
-        size_t n = len > UPLOAD_MAX_INPUT ? UPLOAD_MAX_INPUT : len;
-        ssize_t dn = b64dec_update(&u->dec, data, n, u->decbuf);
-        if (dn < 0 || fwrite(u->decbuf, 1, (size_t)dn, u->f) != (size_t)dn) {
-            u->failed = true;
-            return 0;
-        }
-        u->bytes += (size_t)dn;
-        data += n;
-        len -= n;
+    ssize_t dn = b64dec_update(&u->dec, data, len, u->decbuf);
+    if (dn < 0 || fwrite(u->decbuf, 1, (size_t)dn, u->f) != (size_t)dn) {
+        u->failed = true;
+        return;
     }
-    return 0;
+    u->bytes += (size_t)dn;
 }
 
 // Closes and removes any leftover upload temp state. No-op when nothing was
