@@ -18,7 +18,7 @@ const char *screen_mcp_parse_opts(McpCall *call, const char *scale_key, ScreenOp
 
     char val[24];
     if (mcp_arg_string(call, "stack", val, sizeof(val)) && !screen_parse_stack(val, &o->stack))
-        return "invalid 'stack'";
+        return SCREEN_STACK_ERROR;
 
     double scale;
     if (mcp_arg_double(call, scale_key, &scale)) {
@@ -27,35 +27,18 @@ const char *screen_mcp_parse_opts(McpCall *call, const char *scale_key, ScreenOp
         o->transcode |= o->jpeg.div != 1;
     }
 
-    int quality = mcp_arg_int(call, "quality", 0);
-    if (json_obj_get(call->doc, call->args, "quality") >= 0) {
-        if (quality < 1 || quality > 100)
-            return "invalid 'quality' (1-100)";
-        o->jpeg.quality = quality;
-        o->transcode = true;
-    }
+    if (json_obj_get(call->doc, call->args, "quality") >= 0 &&
+        !screen_opts_set_quality(o, mcp_arg_int(call, "quality", 0)))
+        return "invalid 'quality' (1-100)";
 
     int crop = json_obj_get(call->doc, call->args, "crop");
-    if (crop >= 0) {
-        int x = json_obj_int(call->doc, crop, "x", -1);
-        int y = json_obj_int(call->doc, crop, "y", -1);
-        int w = json_obj_int(call->doc, crop, "width", -1);
-        int h = json_obj_int(call->doc, crop, "height", -1);
-        if (x < 0 || y < 0 || w <= 0 || h <= 0)
-            return "invalid 'crop' (needs integer x, y, width, height)";
-        o->jpeg.crop_x = x;
-        o->jpeg.crop_y = y;
-        o->jpeg.crop_w = w;
-        o->jpeg.crop_h = h;
-        o->transcode = true;
-    }
+    if (crop >= 0 &&
+        !screen_opts_set_crop(o, json_obj_int(call->doc, crop, "x", -1),
+                              json_obj_int(call->doc, crop, "y", -1),
+                              json_obj_int(call->doc, crop, "width", -1),
+                              json_obj_int(call->doc, crop, "height", -1)))
+        return "invalid 'crop' (needs integer x, y, width, height)";
     return NULL;
-}
-
-const u8 *screen_mcp_capture(McpCall *call, const ScreenOpts *o, size_t *out_size,
-                             char *err, size_t errsz) {
-    Result rc;
-    return screen_capture(call->req, o, out_size, &rc, err, errsz);
 }
 
 static void tool_screenshot(McpCall *call) {
@@ -66,32 +49,25 @@ static void tool_screenshot(McpCall *call) {
         return;
     }
     size_t size = 0;
+    Result rc;
     char err[96];
-    const u8 *jpeg = screen_mcp_capture(call, &o, &size, err, sizeof(err));
+    const u8 *jpeg = screen_capture(call->req, &o, &size, &rc, err, sizeof(err));
     if (!jpeg) {
         mcp_reply_error(call, err);
         return;
     }
-    mcp_reply_image(call, jpeg, size);
+    mcp_reply_image(call, NULL, jpeg, size);
 }
 
 static void tool_wait_for_screen(McpCall *call) {
-    ScreenWait w = {
-        .mode = SCREEN_WAIT_CHANGE,
-        .stack = ViLayerStack_Screenshot,
-        .timeout_ms = mcp_arg_int(call, "timeoutMs", SCREEN_WAIT_DEFAULT_TIMEOUT_MS),
-        .threshold_pct = SCREEN_WAIT_DEFAULT_THRESHOLD,
-        .stable_ms = mcp_arg_int(call, "stableMs", SCREEN_WAIT_DEFAULT_STABLE_MS),
-    };
+    ScreenWait w;
+    screen_wait_init(&w);
+    w.timeout_ms = mcp_arg_int(call, "timeoutMs", w.timeout_ms);
+    w.stable_ms = mcp_arg_int(call, "stableMs", w.stable_ms);
     char val[16];
-    if (mcp_arg_string(call, "until", val, sizeof(val))) {
-        if (strcmp(val, "stable") == 0) {
-            w.mode = SCREEN_WAIT_STABLE;
-            w.threshold_pct = SCREEN_WAIT_STABLE_THRESHOLD;
-        } else if (strcmp(val, "change") != 0) {
-            mcp_reply_error(call, "invalid 'until' (change or stable)");
-            return;
-        }
+    if (mcp_arg_string(call, "until", val, sizeof(val)) && !screen_wait_set_until(&w, val)) {
+        mcp_reply_error(call, "invalid 'until' (change or stable)");
+        return;
     }
     double threshold;
     if (mcp_arg_double(call, "thresholdPercent", &threshold)) {
@@ -135,14 +111,15 @@ static void tool_wait_for_screen(McpCall *call) {
         return;
     }
     size_t size = 0;
-    const u8 *jpeg = screen_mcp_capture(call, &shot, &size, err, sizeof(err));
+    Result rc;
+    const u8 *jpeg = screen_capture(call->req, &shot, &size, &rc, err, sizeof(err));
     if (!jpeg) {
         char full[288];
         snprintf(full, sizeof(full), "%s (screenshot failed: %s)", msg, err);
         mcp_reply_text(call, full);
         return;
     }
-    mcp_reply_text_and_image(call, msg, jpeg, size);
+    mcp_reply_image(call, msg, jpeg, size);
 }
 
 void screen_mcp_register(void) {

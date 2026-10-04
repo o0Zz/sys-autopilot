@@ -9,6 +9,7 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
 
@@ -102,6 +103,13 @@ bool http_write_all(int fd, const void *buf, size_t len) {
         len -= (size_t)n;
     }
     return true;
+}
+
+bool http_set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0)
+        return false;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
 // Decodes %XX escapes and '+' (as space) in-place-safe copy from src to out.

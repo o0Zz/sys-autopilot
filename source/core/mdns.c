@@ -4,6 +4,7 @@
 #include "platform/netif.h"
 #include "core/log.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -28,11 +29,6 @@ static bool extra_txt_has_key(const char *key) {
     return false;
 }
 
-// Build "<instance>.<service>" (the DNS-SD instance FQDN).
-static int fqdn(char *buf, size_t cap, const MdnsConfig *cfg) {
-    return snprintf(buf, cap, "%s." MDNS_SERVICE_TYPE, cfg->instance);
-}
-
 // "auth" TXT value reflecting the configured authentication scheme. A feature
 // that offers more (the OAuth login) overrides it with mdns_add_txt("auth=...").
 static const char *auth_kind(const Config *app_cfg) {
@@ -43,22 +39,31 @@ static const char *auth_kind(const Config *app_cfg) {
     return "none";
 }
 
-// Builds the TXT rdata blob (each "key=value" prefixed by a 1-byte length)
-// into cfg->txt / cfg->txt_len. Pairs is a NULL-terminated array of strings
-// already formatted as "key=value"; empty/oversized entries are skipped.
-static void build_txt(MdnsConfig *cfg, const char *const *pairs) {
-    size_t len = 0;
-    for (size_t i = 0; pairs && pairs[i]; i++) {
-        size_t plen = strlen(pairs[i]);
-        if (plen == 0 || plen > 255)
-            continue;
-        if (len + 1 + plen > sizeof(cfg->txt))
-            break;
-        cfg->txt[len++] = (uint8_t)plen;
-        memcpy(cfg->txt + len, pairs[i], plen);
-        len += plen;
+// Appends one "key=value" entry, prefixed by its 1-byte length, to the TXT
+// rdata blob in cfg->txt / cfg->txt_len. Empty or oversized (>255) entries
+// are skipped; once an entry doesn't fit, the record is full and every later
+// entry is dropped too.
+typedef struct {
+    MdnsConfig *cfg;
+    bool full;
+} TxtWriter;
+
+static void txt_add(TxtWriter *t, const char *fmt, ...) {
+    char entry[256];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(entry, sizeof(entry), fmt, ap);
+    va_end(ap);
+    if (t->full || n <= 0 || n > 255)
+        return;
+    MdnsConfig *cfg = t->cfg;
+    if (cfg->txt_len + 1 + (size_t)n > sizeof(cfg->txt)) {
+        t->full = true;
+        return;
     }
-    cfg->txt_len = len;
+    cfg->txt[cfg->txt_len++] = (uint8_t)n;
+    memcpy(cfg->txt + cfg->txt_len, entry, (size_t)n);
+    cfg->txt_len += (size_t)n;
 }
 
 // Fills the name/port/TXT fields shared by every platform. The caller is
@@ -71,33 +76,21 @@ static void mdns_fill_common(MdnsConfig *cfg, const Config *app_cfg) {
     memset(cfg, 0, sizeof(*cfg));
     snprintf(cfg->instance, sizeof(cfg->instance), "%s", name);
     snprintf(cfg->host, sizeof(cfg->host), "%s.local", name);
+    snprintf(cfg->fqdn, sizeof(cfg->fqdn), "%s." MDNS_SERVICE_TYPE, cfg->instance);
     cfg->port = (uint16_t)app_cfg->port;
 
-    // DNS-SD TXT key=value pairs. Each must be <=255 bytes.
-    char version[48], firmware[48], model[48], ams[48];
-    snprintf(version,  sizeof(version),  "version=%s", app_version());
-    snprintf(model,    sizeof(model),    "model=%s", di->model);
-    snprintf(firmware, sizeof(firmware), "firmware=%s", di->firmware);
-    snprintf(ams,      sizeof(ams),      "atmosphere=%s", di->atmosphere);
-
-    const char *pairs[8 + MAX_EXTRA_TXT];
-    int n = 0;
-    pairs[n++] = version;
+    // DNS-SD TXT key=value pairs.
+    TxtWriter t = { cfg, false };
+    txt_add(&t, "version=%s", app_version());
     for (int i = 0; i < g_extra_txt_count; i++)
-        pairs[n++] = g_extra_txt[i];
-    char auth[32];
-    if (!extra_txt_has_key("auth")) {
-        snprintf(auth, sizeof(auth), "auth=%s", auth_kind(app_cfg));
-        pairs[n++] = auth;
-    }
-    pairs[n++] = model;
+        txt_add(&t, "%s", g_extra_txt[i]);
+    if (!extra_txt_has_key("auth"))
+        txt_add(&t, "auth=%s", auth_kind(app_cfg));
+    txt_add(&t, "model=%s", di->model);
     if (di->firmware[0] != '\0')
-        pairs[n++] = firmware;
+        txt_add(&t, "firmware=%s", di->firmware);
     if (di->atmosphere[0] != '\0')
-        pairs[n++] = ams;
-    pairs[n] = NULL;
-
-    build_txt(cfg, pairs);
+        txt_add(&t, "atmosphere=%s", di->atmosphere);
 }
 
 // (On the host, netif returns a fixed placeholder so the wire-format helpers
@@ -233,18 +226,13 @@ static void emit_nsec(Writer *w, const MdnsConfig *cfg) {
 }
 
 static void emit_ptr(Writer *w, const MdnsConfig *cfg) {
-    char instance_fqdn[128];
-    // "<instance>._sys-autopilot._tcp.local"
-    fqdn(instance_fqdn, sizeof(instance_fqdn), cfg);
     size_t at = w_rr_head(w, MDNS_SERVICE_TYPE, DNS_TYPE_PTR, DNS_CLASS_IN, TTL_PTR);
-    w_name(w, instance_fqdn);
+    w_name(w, cfg->fqdn);
     w_rr_patch(w, at);
 }
 
 static void emit_srv(Writer *w, const MdnsConfig *cfg) {
-    char instance_fqdn[128];
-    fqdn(instance_fqdn, sizeof(instance_fqdn), cfg);
-    size_t at = w_rr_head(w, instance_fqdn, DNS_TYPE_SRV,
+    size_t at = w_rr_head(w, cfg->fqdn, DNS_TYPE_SRV,
                           DNS_CLASS_IN | DNS_CLASS_FLUSH, TTL_HOST);
     w_u16(w, 0);            // priority
     w_u16(w, 0);            // weight
@@ -254,9 +242,7 @@ static void emit_srv(Writer *w, const MdnsConfig *cfg) {
 }
 
 static void emit_txt(Writer *w, const MdnsConfig *cfg) {
-    char instance_fqdn[128];
-    fqdn(instance_fqdn, sizeof(instance_fqdn), cfg);
-    size_t at = w_rr_head(w, instance_fqdn, DNS_TYPE_TXT,
+    size_t at = w_rr_head(w, cfg->fqdn, DNS_TYPE_TXT,
                           DNS_CLASS_IN | DNS_CLASS_FLUSH, TTL_PTR);
     if (cfg->txt_len > 0) {
         w_bytes(w, cfg->txt, cfg->txt_len);
@@ -338,8 +324,6 @@ static void scan_questions(const MdnsConfig *cfg,
         return;
     uint16_t qd = (uint16_t)((pkt[4] << 8) | pkt[5]);
     size_t off = 12;
-    char instance_fqdn[128];
-    fqdn(instance_fqdn, sizeof(instance_fqdn), cfg);
 
     for (uint16_t i = 0; i < qd && off < pkt_len; i++) {
         size_t name_off = off;
@@ -358,7 +342,7 @@ static void scan_questions(const MdnsConfig *cfg,
             if (any || qtype == DNS_TYPE_A) { w->want_a = true; matched = true; }
         } else if (name_equals(pkt, pkt_len, name_off, MDNS_SERVICE_TYPE)) {
             if (any || qtype == DNS_TYPE_PTR) { w->want_ptr = true; matched = true; }
-        } else if (name_equals(pkt, pkt_len, name_off, instance_fqdn)) {
+        } else if (name_equals(pkt, pkt_len, name_off, cfg->fqdn)) {
             if (any || qtype == DNS_TYPE_SRV) { w->want_srv = true; matched = true; }
             if (any || qtype == DNS_TYPE_TXT) { w->want_txt = true; matched = true; }
         }
@@ -435,8 +419,9 @@ size_t mdns_build_announcement(const MdnsConfig *cfg,
 // --- Switch socket layer ------------------------------------------------------
 
 #ifdef __SWITCH__
+#include "core/http.h"
+
 #include <errno.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -485,9 +470,7 @@ int mdns_open(const MdnsConfig *cfg) {
     if (group_membership(fd, IP_ADD_MEMBERSHIP) != 0)
         LOGW("mdns", "join group failed (errno=%d); continuing", errno);
 
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags >= 0)
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    http_set_nonblocking(fd);
 
     LOGI("mdns", "advertising %s (service " MDNS_SERVICE_TYPE ") on port %u",
          cfg->host, (unsigned)cfg->port);

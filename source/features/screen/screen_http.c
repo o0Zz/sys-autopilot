@@ -42,7 +42,7 @@ static bool parse_opts(HttpRequest *req, ScreenOpts *o) {
     screen_opts_default(o);
     char val[32];
     if (http_query_get(req, "stack", val, sizeof(val)) && !screen_parse_stack(val, &o->stack)) {
-        http_send_error(req->fd, 400, "invalid 'stack' (use screenshot|default|lcd|recording|lastframe)");
+        http_send_error(req->fd, 400, SCREEN_STACK_ERROR);
         return false;
     }
     if (http_query_get(req, "scale", val, sizeof(val))) {
@@ -53,25 +53,17 @@ static bool parse_opts(HttpRequest *req, ScreenOpts *o) {
         o->transcode |= o->jpeg.div != 1;
     }
     if (http_query_get(req, "quality", val, sizeof(val))) {
-        int q = atoi(val);
-        if (q < 1 || q > 100) {
+        if (!screen_opts_set_quality(o, atoi(val))) {
             http_send_error(req->fd, 400, "invalid 'quality' (1-100)");
             return false;
         }
-        o->jpeg.quality = q;
-        o->transcode = true;
     }
     if (http_query_get(req, "crop", val, sizeof(val))) {
         int c[4];
-        if (!parse_crop(val, c) || c[2] == 0 || c[3] == 0) {
+        if (!parse_crop(val, c) || !screen_opts_set_crop(o, c[0], c[1], c[2], c[3])) {
             http_send_error(req->fd, 400, "invalid 'crop' (use crop=x,y,width,height)");
             return false;
         }
-        o->jpeg.crop_x = c[0];
-        o->jpeg.crop_y = c[1];
-        o->jpeg.crop_w = c[2];
-        o->jpeg.crop_h = c[3];
-        o->transcode = true;
     }
     return true;
 }
@@ -97,25 +89,15 @@ static void get_screenshot(HttpRequest *req) {
 
 // GET /wait/screen?until=change|stable&timeoutMs=&thresholdPercent=&stableMs=&stack=
 static void get_wait_screen(HttpRequest *req) {
-    ScreenWait w = {
-        .mode = SCREEN_WAIT_CHANGE,
-        .stack = ViLayerStack_Screenshot,
-        .timeout_ms = SCREEN_WAIT_DEFAULT_TIMEOUT_MS,
-        .threshold_pct = SCREEN_WAIT_DEFAULT_THRESHOLD,
-        .stable_ms = SCREEN_WAIT_DEFAULT_STABLE_MS,
-    };
+    ScreenWait w;
+    screen_wait_init(&w);
     char val[32];
-    if (http_query_get(req, "until", val, sizeof(val))) {
-        if (strcmp(val, "stable") == 0) {
-            w.mode = SCREEN_WAIT_STABLE;
-            w.threshold_pct = SCREEN_WAIT_STABLE_THRESHOLD;
-        } else if (strcmp(val, "change") != 0) {
-            http_send_error(req->fd, 400, "invalid 'until' (change or stable)");
-            return;
-        }
+    if (http_query_get(req, "until", val, sizeof(val)) && !screen_wait_set_until(&w, val)) {
+        http_send_error(req->fd, 400, "invalid 'until' (change or stable)");
+        return;
     }
     if (http_query_get(req, "stack", val, sizeof(val)) && !screen_parse_stack(val, &w.stack)) {
-        http_send_error(req->fd, 400, "invalid 'stack'");
+        http_send_error(req->fd, 400, SCREEN_STACK_ERROR);
         return;
     }
     query_int(req, "timeoutMs", &w.timeout_ms);

@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <poll.h>
-#include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -20,13 +19,6 @@
 // System Settings. One idle:sys IPC per period is negligible.
 #define KEEPAWAKE_INTERVAL_NS (5ULL * 1000000000ULL)
 
-static bool set_nonblocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0)
-        return false;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-}
-
 static int create_listener(int port) {
     int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd < 0)
@@ -34,7 +26,7 @@ static int create_listener(int port) {
 
     int opt = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    set_nonblocking(fd);
+    http_set_nonblocking(fd);
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
@@ -159,7 +151,7 @@ static void close_client(int fd) {
 static void handle_connection(int fd, const Config *cfg) {
     // Non-blocking I/O: the http layer waits via poll() with an inactivity
     // timeout, so a stalled client can't wedge the server.
-    set_nonblocking(fd);
+    http_set_nonblocking(fd);
 
     // Serve multiple requests on one connection (HTTP/1.1 keep-alive). Bounded
     // so a single client can't monopolize the single-threaded server. MCP
@@ -186,10 +178,10 @@ static void handle_connection(int fd, const Config *cfg) {
 // now", so the first ping goes out before the console has had time to idle
 // out.
 static u64 g_keepawake_next;
-static const Config *g_server_cfg;
+static bool g_keep_awake; // cfg->keep_awake, for the idle hook
 
 static void keepawake_maybe(void) {
-    if (!g_server_cfg || !g_server_cfg->keep_awake)
+    if (!g_keep_awake)
         return;
     u64 now = armGetSystemTick();
     if (now >= g_keepawake_next) {
@@ -211,6 +203,18 @@ static bool wait_idle(void) {
 
 // Delay before retrying a failed bind/listen or a broken poll.
 #define RETRY_WAIT_NS 1000000000LL // 1s
+
+// Closes the listener and the mDNS socket, if open, and marks both closed.
+static void close_sockets(int *listen_fd, int *mdns_fd) {
+    if (*listen_fd >= 0) {
+        close(*listen_fd);
+        *listen_fd = -1;
+    }
+    if (*mdns_fd >= 0) {
+        mdns_close(*mdns_fd);
+        *mdns_fd = -1;
+    }
+}
 
 void http_server_run(const Config *cfg) {
     int listen_fd = -1;
@@ -237,7 +241,7 @@ void http_server_run(const Config *cfg) {
     int netcheck_ticks = 0;
 
     // A handler blocked in a wait tool keeps pinging through the idle hook.
-    g_server_cfg = cfg;
+    g_keep_awake = cfg->keep_awake;
     http_server_set_idle_hook(wait_idle);
 
     for (;;) {
@@ -254,14 +258,7 @@ void http_server_run(const Config *cfg) {
             // to the SD card, so it must stay silent across the whole window.
             LOGI("power", "sleeping, releasing sockets");
             log_set_suspended(true);
-            if (listen_fd >= 0) {
-                close(listen_fd);
-                listen_fd = -1;
-            }
-            if (mdns_fd >= 0) {
-                mdns_close(mdns_fd);
-                mdns_fd = -1;
-            }
+            close_sockets(&listen_fd, &mdns_fd);
             // Features release what must not survive sleep (the input
             // feature's HDLS work buffer: holding hid transfer memory across
             // the transition crashes the sleep sequence).
@@ -310,14 +307,7 @@ void http_server_run(const Config *cfg) {
             netcheck_ticks = 0;
             if (netif_ipv4_changed()) {
                 LOGW("server", "IP changed; rebuilding sockets");
-                if (listen_fd >= 0) {
-                    close(listen_fd);
-                    listen_fd = -1;
-                }
-                if (mdns_fd >= 0) {
-                    mdns_close(mdns_fd);
-                    mdns_fd = -1;
-                }
+                close_sockets(&listen_fd, &mdns_fd);
                 mdns_ready = false; // re-query the IP on the next iteration
             }
         }
@@ -359,30 +349,16 @@ void http_server_run(const Config *cfg) {
                 mdns_announce_left--;
         }
 
-        struct pollfd pfds[2];
-        pfds[0].fd = listen_fd;
-        pfds[0].events = POLLIN;
-        pfds[0].revents = 0;
-        nfds_t nfds = 1;
-        int mdns_idx = -1;
-        if (mdns_fd >= 0) {
-            mdns_idx = (int)nfds;
-            pfds[nfds].fd = mdns_fd;
-            pfds[nfds].events = POLLIN;
-            pfds[nfds].revents = 0;
-            nfds++;
-        }
-        int pr = poll(pfds, nfds, 100);
+        struct pollfd pfds[2] = {
+            { .fd = listen_fd, .events = POLLIN, .revents = 0 },
+            { .fd = mdns_fd,   .events = POLLIN, .revents = 0 },
+        };
+        int pr = poll(pfds, mdns_fd >= 0 ? 2 : 1, 100);
 
         if (pr < 0) {
             // bsd service hiccup; rebuild both sockets.
             LOGE("server", "poll failed (errno=%d), rebuilding listener", errno);
-            close(listen_fd);
-            listen_fd = -1;
-            if (mdns_fd >= 0) {
-                mdns_close(mdns_fd);
-                mdns_fd = -1;
-            }
+            close_sockets(&listen_fd, &mdns_fd);
             svcSleepThread(RETRY_WAIT_NS);
             continue;
         }
@@ -390,7 +366,7 @@ void http_server_run(const Config *cfg) {
             continue;
 
         // Service mDNS queries before HTTP accepts.
-        if (mdns_idx >= 0 && (pfds[mdns_idx].revents & POLLIN))
+        if (mdns_fd >= 0 && (pfds[1].revents & POLLIN))
             mdns_handle_readable(mdns_fd, &mdns_cfg);
 
         if (!(pfds[0].revents & POLLIN))

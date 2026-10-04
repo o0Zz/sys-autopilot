@@ -44,9 +44,13 @@ static void header_value(const char *head, const char *key, char *out, size_t ou
     out[n] = '\0';
 }
 
+// Fills the size, the header fields and has_screenshot.
 static void read_header(CrashReport *r) {
     char fspath[128];
+    struct stat st;
     snprintf(fspath, sizeof(fspath), FILES_ROOT "%s", r->path);
+    if (stat(fspath, &st) == 0)
+        r->size = (long long)st.st_size;
     FILE *f = fopen(fspath, "rb");
     if (!f)
         return;
@@ -59,7 +63,6 @@ static void read_header(CrashReport *r) {
 
     // A crash report's screenshot: same name, .jpg.
     size_t plen = strlen(fspath);
-    struct stat st;
     memcpy(fspath + plen - 4, ".jpg", 4);
     r->has_screenshot = stat(fspath, &st) == 0;
 }
@@ -97,14 +100,8 @@ int crash_list(CrashReport *out, int max) {
         closedir(dir);
     }
     // Only the reports kept are opened.
-    for (int i = 0; i < count; i++) {
-        char fspath[128];
-        struct stat st;
-        snprintf(fspath, sizeof(fspath), FILES_ROOT "%s", out[i].path);
-        if (stat(fspath, &st) == 0)
-            out[i].size = (long long)st.st_size;
+    for (int i = 0; i < count; i++)
         read_header(&out[i]);
-    }
     return count;
 }
 

@@ -213,8 +213,8 @@ static bool write_base64(McpCall *call, const uint8_t *jpeg, size_t size) {
     return true;
 }
 
-static void send_image_result(McpCall *call, const char *text,
-                              const uint8_t *jpeg, size_t size) {
+void mcp_reply_image(McpCall *call, const char *text,
+                     const uint8_t *jpeg, size_t size) {
     static const char img_only_pre[] = "{\"content\":[{\"type\":\"image\",\"data\":\"";
     static const char img_pre[] = "\"},{\"type\":\"image\",\"data\":\"";
     static const char img_post[] = "\",\"mimeType\":\"image/jpeg\"}],\"isError\":false}";
@@ -241,15 +241,6 @@ static void send_image_result(McpCall *call, const char *text,
         return;
     http_write_all(fd, img_post, sizeof(img_post) - 1);
     http_write_all(fd, "}", 1);
-}
-
-void mcp_reply_image(McpCall *call, const uint8_t *jpeg, size_t size) {
-    send_image_result(call, NULL, jpeg, size);
-}
-
-void mcp_reply_text_and_image(McpCall *call, const char *text,
-                              const uint8_t *jpeg, size_t size) {
-    send_image_result(call, text, jpeg, size);
 }
 
 // --- arguments ----------------------------------------------------------------
@@ -450,20 +441,9 @@ static void handle_get(HttpRequest *req) {
     // server->client SSE stream with 405 (spec-sanctioned; capable clients
     // proceed over POST). Force the connection closed so the client retires
     // this socket cleanly rather than reusing it into a reset.
-    static const char body[] = "{\"error\":\"method not allowed\"}";
-    char hdr[256];
-    int n = snprintf(hdr, sizeof(hdr),
-                     "HTTP/1.1 405 Method Not Allowed\r\n"
-                     "Server: sys-autopilot\r\n"
-                     "Access-Control-Allow-Origin: *\r\n"
-                     "Content-Type: application/json\r\n"
-                     "Content-Length: %zu\r\n"
-                     "Connection: close\r\n"
-                     "\r\n",
-                     sizeof(body) - 1);
-    http_write_all(req->fd, hdr, (size_t)n);
-    http_write_all(req->fd, body, sizeof(body) - 1);
     req->keep_alive = false;
+    http_set_keep_alive(false);
+    http_send_error(req->fd, 405, "method not allowed");
 }
 
 void mcp_server_http_register(void) {

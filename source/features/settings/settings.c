@@ -1,6 +1,7 @@
 #include "features/settings/settings.h"
 
 #include <stdio.h>
+#include <strings.h>
 
 static int days_in_month(int year, int month) {
     static const int kDays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
@@ -23,6 +24,29 @@ bool settings_nickname_valid(const char *name) {
         if ((*p & 0xC0) != 0x80)
             chars++;
     return chars >= 1 && chars <= SETTINGS_NICKNAME_MAX_CHARS;
+}
+
+bool settings_theme_from_json(const JsonDoc *doc, int obj, bool *out_dark, const char **err) {
+    char val[16] = {0};
+    int t = json_obj_get(doc, obj, "theme");
+    if (t < 0 || !json_get_string(doc, t, val, sizeof(val))) {
+        *err = "missing 'theme' (\"light\" or \"dark\")";
+        return false;
+    }
+    if (strcasecmp(val, "dark") == 0)       *out_dark = true;
+    else if (strcasecmp(val, "light") == 0) *out_dark = false;
+    else { *err = "'theme' must be \"light\" or \"dark\""; return false; }
+    return true;
+}
+
+void settings_datetime_from_json(const JsonDoc *doc, int obj, DateTime *out) {
+    settings_get_datetime(out);
+    out->year   = json_obj_int(doc, obj, "year",   out->year);
+    out->month  = json_obj_int(doc, obj, "month",  out->month);
+    out->day    = json_obj_int(doc, obj, "day",    out->day);
+    out->hour   = json_obj_int(doc, obj, "hour",   out->hour);
+    out->minute = json_obj_int(doc, obj, "minute", out->minute);
+    out->second = json_obj_int(doc, obj, "second", out->second);
 }
 
 #ifdef __SWITCH__

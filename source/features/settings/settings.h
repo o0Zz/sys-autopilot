@@ -1,5 +1,7 @@
 #pragma once
 
+#include "util/json.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -79,3 +81,13 @@ bool settings_set_datetime(const DateTime *dt);
 // True when every field is in range (year 2000-2100, day within its month).
 // Shared by the REST and MCP front-ends so both reject the same input.
 bool settings_datetime_valid(const DateTime *dt);
+
+// --- request arguments ---------------------------------------------------------
+// Shared by the REST and MCP front-ends, which take the same JSON shapes.
+
+// {"theme":"light"|"dark"} -> *out_dark. False with *err set otherwise.
+bool settings_theme_from_json(const JsonDoc *doc, int obj, bool *out_dark, const char **err);
+
+// The current date/time with any of {"year","month","day","hour","minute",
+// "second"} found in obj applied over it, so callers may set only some fields.
+void settings_datetime_from_json(const JsonDoc *doc, int obj, DateTime *out);

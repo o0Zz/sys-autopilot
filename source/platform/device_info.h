@@ -9,10 +9,11 @@ typedef struct {
     const char *serial;      // Console serial, e.g. "XAW10012345678" or "" if N/A
 } DeviceInfo;
 
-// Queries the system services (set:sys, spl) and caches the results. MUST be
-// called from __appInit while the 'sm' session is still open, because the
-// underlying smGetService calls fail once smExit() has run. No-op on host
-// builds.
+// Queries the system services (set:sys, spl) and caches the results, including
+// the OS version for libnx (hosversionSet). MUST be called from __appInit
+// while the 'sm' session is still open, because the underlying smGetService
+// calls fail once smExit() has run, and before opening any service that reads
+// hosversion. No-op on host builds.
 void device_info_init(void);
 
 // Returns the cached device facts gathered by device_info_init(). Never NULL;

@@ -1,5 +1,6 @@
 #include "features/files/files.h"
 #include "core/http_server.h"
+#include "util/hex.h"
 #include "util/json.h"
 #include "util/sha256.h"
 
@@ -245,12 +246,7 @@ bool files_hash_sha256(const char *fspath, void *buf, size_t buf_size,
     uint8_t digest[32];
     sha256_stream_final(&sha, digest);
 
-    static const char hex[] = "0123456789abcdef";
-    for (int i = 0; i < 32; i++) {
-        out_hex[i * 2]     = hex[digest[i] >> 4];
-        out_hex[i * 2 + 1] = hex[digest[i] & 0xF];
-    }
-    out_hex[64] = '\0';
+    hex_encode(digest, sizeof(digest), out_hex);
 
     *out_size = total;
     return true;

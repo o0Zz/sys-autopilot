@@ -79,3 +79,6 @@ void http_send_redirect(int fd, const char *location);
 
 // Writes all of buf to fd, handling short writes. Returns false on error.
 bool http_write_all(int fd, const void *buf, size_t len);
+
+// Puts a socket in non-blocking mode. Returns false if fcntl fails.
+bool http_set_nonblocking(int fd);

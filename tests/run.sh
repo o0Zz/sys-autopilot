@@ -62,7 +62,7 @@ echo "== test_oauth =="
 cc $CFLAGS \
     -DOAUTH_TOKENS_PATH="\"$FAKE_SD-tokens.txt\"" \
     -o "$OUT/test_oauth" test_oauth.c \
-    "$FEAT/oauth/oauth.c" "$UTIL/sha256.c" "$PLATFORM/device_info.c" \
+    "$FEAT/oauth/oauth.c" "$UTIL/sha256.c" "$UTIL/hex.c" "$PLATFORM/device_info.c" \
     "$CORE/mdns.c" "$PLATFORM/netif.c" $ROUTER
 "$OUT/test_oauth"
 
@@ -87,7 +87,7 @@ cc $CFLAGS -Ifake -DFEATURE_MCP \
     "$FEAT/settings/settings.c" "$FEAT/settings/settings_mcp.c" \
     "$FEAT/titles/titles.c" "$FEAT/titles/titles_mcp.c" \
     "$FEAT/network/network.c" "$FEAT/network/network_mcp.c" \
-    "$CORE/mdns.c" "$PLATFORM/netif.c" "$PLATFORM/device_info.c" "$UTIL/sha256.c" \
+    "$CORE/mdns.c" "$PLATFORM/netif.c" "$PLATFORM/device_info.c" "$UTIL/sha256.c" "$UTIL/hex.c" \
     $ROUTER
 "$OUT/test_mcp"
 
@@ -97,7 +97,7 @@ cc $CFLAGS \
     -DFAKE_SD_NRO="\"$FAKE_SD-nro\"" \
     -DNRO_NETLOADER_PORT=28299 \
     -o "$OUT/test_nro" test_nro.c \
-    "$FEAT/nro/nro.c" "$FEAT/files/files.c" "$UTIL/sha256.c" "$PLATFORM/netif.c" $ROUTER
+    "$FEAT/nro/nro.c" "$FEAT/files/files.c" "$UTIL/sha256.c" "$UTIL/hex.c" "$PLATFORM/netif.c" $ROUTER
 "$OUT/test_nro"
 
 echo "ALL HOST TESTS PASSED"

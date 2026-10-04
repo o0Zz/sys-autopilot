@@ -1,5 +1,7 @@
 #pragma once
 
+#include "util/json.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -27,3 +29,9 @@
 // failure.
 bool nro_launch(const char *path, const char *args, size_t args_len, char *buf,
                 char *err, size_t errsz);
+
+// {"args":["--x", ...]} (optional) -> NUL-separated arguments in args
+// (NRO_ARGS_MAX bytes) and their total length. Shared by REST and MCP.
+// False with *err set when an entry is not a string or they do not fit.
+bool nro_args_from_json(const JsonDoc *doc, int obj, char *args, size_t *args_len,
+                        const char **err);

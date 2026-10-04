@@ -10,12 +10,6 @@
 
 #define TAP_SEQ_MAX 32
 
-static int clamp_delay(int ms) {
-    if (ms < 0) return 0;
-    if (ms > INPUT_MAX_DURATION_MS) return INPUT_MAX_DURATION_MS;
-    return ms;
-}
-
 // Input result with an optional trailing screenshot ({"screenshot":true} in
 // the tool arguments), saving the agent a separate screenshot round trip.
 static void reply_input(McpCall *call, Result rc, const char *ok_msg) {
@@ -42,19 +36,20 @@ static void reply_input(McpCall *call, Result rc, const char *ok_msg) {
         return;
     }
 
-    int delay = clamp_delay(mcp_arg_int(call, "screenshotDelayMs", 250));
+    int delay = input_clamp_ms(mcp_arg_int(call, "screenshotDelayMs", 250), 0);
     if (delay > 0)
         svcSleepThread((s64)delay * 1000000LL);
 
     size_t size = 0;
-    const u8 *jpeg = screen_mcp_capture(call, &opts, &size, err, sizeof(err));
+    Result cap_rc;
+    const u8 *jpeg = screen_capture(call->req, &opts, &size, &cap_rc, err, sizeof(err));
     if (!jpeg) {
         char msg[160];
         snprintf(msg, sizeof(msg), "%s (screenshot failed: %s)", ok_msg, err);
         mcp_reply_text(call, msg);
         return;
     }
-    mcp_reply_text_and_image(call, ok_msg, jpeg, size);
+    mcp_reply_image(call, ok_msg, jpeg, size);
 }
 
 static void tool_tap_buttons(McpCall *call) {
@@ -101,7 +96,7 @@ static void tool_tap_sequence(McpCall *call) {
             int t = json_obj_get(doc, el, "delayAfterMs");
             if (t >= 0)
                 json_get_int(doc, t, &delay);
-            svcSleepThread((s64)clamp_delay((int)delay) * 1000000LL);
+            svcSleepThread((s64)input_clamp_ms((int)delay, 0) * 1000000LL);
         }
     }
     char msg[48];

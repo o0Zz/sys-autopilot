@@ -2,9 +2,7 @@
 #include "core/http_server.h"
 #include "core/request.h"
 #include "features/install/install.h"
-#include "util/json.h"
 
-#include <string.h>
 #include <strings.h>
 
 // Adapts the HTTP request body into the installer's sequential read callback.
@@ -33,8 +31,7 @@ static void handle_install(HttpRequest *req) {
     InstallResult res;
     install_stream(install_body_read, req, storage, work, &res);
 
-    char esc[256];
-    json_escape(res.message, strlen(res.message), esc, sizeof(esc));
+    const char *esc = request_json_escape(req, res.message);
     if (res.ok) {
         http_send_json(req->fd, 200,
                        "{\"ok\":true,\"titleId\":\"%016llx\",\"version\":%u,\"message\":\"%s\"}",

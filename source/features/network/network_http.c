@@ -23,22 +23,11 @@ static void post_dns(HttpRequest *req) {
     if (!doc)
         return;
 
-    bool automatic = false;
-    int t = json_obj_get(doc, 0, "automatic");
-    if (t >= 0)
-        json_get_bool(doc, t, &automatic);
-
-    // Buffers sized generously: json_get_string needs headroom (it reserves a
-    // few bytes for escape expansion), so a 16-byte buffer would reject a full
-    // 15-char dotted IPv4. network_set_dns validates the actual format.
-    char primary[64] = {0}, secondary[64] = {0};
-    t = json_obj_get(doc, 0, "primary");
-    if (t >= 0) json_get_string(doc, t, primary, sizeof(primary));
-    t = json_obj_get(doc, 0, "secondary");
-    if (t >= 0) json_get_string(doc, t, secondary, sizeof(secondary));
-
-    if (!automatic && !primary[0]) {
-        http_send_error(req->fd, 400, "provide 'primary' (IPv4) or set 'automatic':true");
+    bool automatic;
+    char primary[NETWORK_DNS_ARG_SIZE], secondary[NETWORK_DNS_ARG_SIZE];
+    const char *arg_err;
+    if (!network_dns_from_json(doc, 0, &automatic, primary, secondary, &arg_err)) {
+        http_send_error(req->fd, 400, arg_err);
         return;
     }
 

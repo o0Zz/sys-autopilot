@@ -29,13 +29,6 @@ bool process_parse_title_id(const char *s, uint64_t *out) {
 
 #include <switch.h>
 
-// How long process_restart() waits for a terminated program to disappear
-// before giving up. Termination is not observably instantaneous: pm returns
-// once it has asked the kernel to kill the process, and pm keeps
-// resolving the program id until the process object is actually reaped.
-#define RESTART_GRACE_NS   (3ULL * 1000000000ULL)
-#define RESTART_POLL_NS    (50ULL * 1000000ULL)
-
 // __appInit closes the sm session, so hid:dbg cannot be reopened at request
 // time without reconnecting first. Without this the bare hiddbgInitialize()
 // below silently leaves g_hiddbgSrv zeroed, and every later HDLS call fails
@@ -296,17 +289,13 @@ bool process_restart(uint64_t program_id, uint64_t *out_pid, uint32_t *out_rc) {
         if (!process_stop(program_id, out_rc))
             return false;
 
-        // Wait for the process to actually be gone before relaunching, so we
-        // never hand the caller a pid from a launch that raced the teardown.
-        u64 waited = 0;
-        while (waited < RESTART_GRACE_NS) {
-            process_status(program_id, &st);
-            if (!st.running)
-                break;
-            svcSleepThread(RESTART_POLL_NS);
-            waited += RESTART_POLL_NS;
-        }
-        if (st.running) {
+        // Wait (up to 3 s) for the process to actually be gone before
+        // relaunching, so we never hand the caller a pid from a launch that
+        // raced the teardown. Termination is not observably instantaneous: pm
+        // returns once it has asked the kernel to kill the process, and keeps
+        // resolving the program id until the process object is reaped.
+        int waited_ms;
+        if (!process_wait(program_id, false, 3000, &st, &waited_ms)) {
             LOGW("process", "%016llx still running after stop",
                  (unsigned long long)program_id);
             return false;

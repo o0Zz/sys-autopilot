@@ -1,5 +1,7 @@
 #pragma once
 
+#include "util/json.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -39,3 +41,16 @@ static inline int network_http_status(NetworkResult r) {
     return r == NETWORK_OK ? 200 : r == NETWORK_INVALID ? 400
          : r == NETWORK_UNAVAILABLE ? 503 : 500;
 }
+
+// Buffer size for network_dns_from_json's primary/secondary: json_get_string
+// needs headroom (it reserves a few bytes for escape expansion), so a 16-byte
+// buffer would reject a full 15-char dotted IPv4. network_set_dns validates
+// the actual format.
+#define NETWORK_DNS_ARG_SIZE 64
+
+// {"automatic":true} | {"primary":"1.2.3.4","secondary":"5.6.7.8"}, as REST
+// and MCP both take it. primary and secondary are NETWORK_DNS_ARG_SIZE bytes,
+// "" when absent. False with *err set when neither automatic nor primary is
+// given.
+bool network_dns_from_json(const JsonDoc *doc, int obj, bool *automatic, char *primary,
+                           char *secondary, const char **err);

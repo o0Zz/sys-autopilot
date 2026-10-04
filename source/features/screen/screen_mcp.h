@@ -13,8 +13,3 @@ void screen_mcp_register(void);
 // tools that attach one), "quality" and "crop". Returns NULL or a message
 // for the agent.
 const char *screen_mcp_parse_opts(McpCall *call, const char *scale_key, ScreenOpts *o);
-
-// Captures a screenshot into request memory for an MCP reply. Returns the
-// JPEG (size in *out_size), or NULL with a message in err.
-const u8 *screen_mcp_capture(McpCall *call, const ScreenOpts *o, size_t *out_size,
-                             char *err, size_t errsz);

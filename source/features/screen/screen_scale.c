@@ -36,6 +36,25 @@ bool screen_scale_div(double scale, int *div) {
     return false;
 }
 
+bool screen_opts_set_quality(ScreenOpts *o, int quality) {
+    if (quality < 1 || quality > 100)
+        return false;
+    o->jpeg.quality = quality;
+    o->transcode = true;
+    return true;
+}
+
+bool screen_opts_set_crop(ScreenOpts *o, int x, int y, int w, int h) {
+    if (x < 0 || y < 0 || w <= 0 || h <= 0)
+        return false;
+    o->jpeg.crop_x = x;
+    o->jpeg.crop_y = y;
+    o->jpeg.crop_w = w;
+    o->jpeg.crop_h = h;
+    o->transcode = true;
+    return true;
+}
+
 const u8 *screen_capture(HttpRequest *req, const ScreenOpts *o, size_t *out_size,
                          Result *out_rc, char *err, size_t errsz) {
     *out_rc = 0;
@@ -98,6 +117,25 @@ double screen_thumb_diff(const ScreenThumb *a, const ScreenThumb *b) {
         if (abs(a->px[i] - b->px[i]) > THUMB_NOISE)
             changed++;
     return 100.0 * changed / n;
+}
+
+void screen_wait_init(ScreenWait *w) {
+    *w = (ScreenWait){
+        .mode = SCREEN_WAIT_CHANGE,
+        .stack = ViLayerStack_Screenshot,
+        .timeout_ms = SCREEN_WAIT_DEFAULT_TIMEOUT_MS,
+        .threshold_pct = SCREEN_WAIT_DEFAULT_THRESHOLD,
+        .stable_ms = SCREEN_WAIT_DEFAULT_STABLE_MS,
+    };
+}
+
+bool screen_wait_set_until(ScreenWait *w, const char *until) {
+    if (strcmp(until, "stable") == 0) {
+        w->mode = SCREEN_WAIT_STABLE;
+        w->threshold_pct = SCREEN_WAIT_STABLE_THRESHOLD;
+        return true;
+    }
+    return strcmp(until, "change") == 0;
 }
 
 #define SCREEN_WAIT_POLL_MS 200

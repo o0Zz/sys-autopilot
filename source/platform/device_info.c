@@ -35,16 +35,13 @@ static const char *model_name(SetSysProductModel m) {
 }
 
 void device_info_init(void) {
-    // OS firmware version is already cached at boot via hosversionSet().
-    u32 hv = hosversionGet();
-    if (hv != 0) {
-        snprintf(g_firmware, sizeof(g_firmware), "%u.%u.%u",
-                 HOSVER_MAJOR(hv), HOSVER_MINOR(hv), HOSVER_MICRO(hv));
-        g_info.firmware = g_firmware;
-    }
-
-    // Product model + serial number via set:sys (already granted in the NPDM).
+    // OS firmware version (cached for libnx with hosversionSet), product model
+    // and serial number via set:sys (already granted in the NPDM).
     if (R_SUCCEEDED(setsysInitialize())) {
+        SetSysFirmwareVersion fw;
+        if (R_SUCCEEDED(setsysGetFirmwareVersion(&fw)))
+            hosversionSet(MAKEHOSVERSION(fw.major, fw.minor, fw.micro));
+
         SetSysProductModel pm = SetSysProductModel_Invalid;
         if (R_SUCCEEDED(setsysGetProductModel(&pm)))
             g_info.model = model_name(pm);
@@ -55,6 +52,13 @@ void device_info_init(void) {
             g_info.serial = g_serial;
         }
         setsysExit();
+    }
+
+    u32 hv = hosversionGet();
+    if (hv != 0) {
+        snprintf(g_firmware, sizeof(g_firmware), "%u.%u.%u",
+                 HOSVER_MAJOR(hv), HOSVER_MINOR(hv), HOSVER_MICRO(hv));
+        g_info.firmware = g_firmware;
     }
 
     // Atmosphère version via the SPL service (requires spl: in the NPDM).

@@ -46,10 +46,10 @@ void mcp_reply_text(McpCall *call, const char *text);   // isError: false
 // Same for text of known length that may contain NUL bytes (file contents).
 void mcp_reply_text_len(McpCall *call, const char *text, size_t len);
 void mcp_reply_error(McpCall *call, const char *text);  // isError: true (tool-level failure)
-void mcp_reply_image(McpCall *call, const uint8_t *jpeg, size_t size);
-// [text, image] content; `text` must not need JSON escaping (static messages).
-void mcp_reply_text_and_image(McpCall *call, const char *text,
-                              const uint8_t *jpeg, size_t size);
+// [text, image] content, or [image] when `text` is NULL; `text` must not need
+// JSON escaping (static messages).
+void mcp_reply_image(McpCall *call, const char *text,
+                     const uint8_t *jpeg, size_t size);
 // JSON-RPC error (protocol-level failure, e.g. out of memory).
 void mcp_reply_rpc_error(McpCall *call, int code, const char *msg);
 

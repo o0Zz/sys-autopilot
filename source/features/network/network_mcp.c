@@ -24,14 +24,12 @@ static void tool_get_dns(McpCall *call) {
 }
 
 static void tool_set_dns(McpCall *call) {
-    bool automatic = false;
-    mcp_arg_bool(call, "automatic", &automatic);
-    char primary[64] = {0}, secondary[64] = {0};
-    mcp_arg_string(call, "primary", primary, sizeof(primary));
-    mcp_arg_string(call, "secondary", secondary, sizeof(secondary));
-
-    if (!automatic && !primary[0]) {
-        mcp_reply_error(call, "provide 'primary' (IPv4) or set 'automatic':true");
+    bool automatic;
+    char primary[NETWORK_DNS_ARG_SIZE], secondary[NETWORK_DNS_ARG_SIZE];
+    const char *arg_err;
+    if (!network_dns_from_json(call->doc, call->args, &automatic, primary, secondary,
+                               &arg_err)) {
+        mcp_reply_error(call, arg_err);
         return;
     }
     char err[160];

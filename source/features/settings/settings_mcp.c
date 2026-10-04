@@ -4,7 +4,6 @@
 #include "features/settings/settings_tools.h"
 
 #include <stdio.h>
-#include <strings.h>
 
 static void tool_get_theme(McpCall *call) {
     bool dark = false;
@@ -16,15 +15,12 @@ static void tool_get_theme(McpCall *call) {
 }
 
 static void tool_set_theme(McpCall *call) {
-    char val[16] = {0};
-    if (!mcp_arg_string(call, "theme", val, sizeof(val))) {
-        mcp_reply_error(call, "missing 'theme' (\"light\" or \"dark\")");
+    bool dark;
+    const char *err;
+    if (!settings_theme_from_json(call->doc, call->args, &dark, &err)) {
+        mcp_reply_error(call, err);
         return;
     }
-    bool dark;
-    if (strcasecmp(val, "dark") == 0)       dark = true;
-    else if (strcasecmp(val, "light") == 0) dark = false;
-    else { mcp_reply_error(call, "'theme' must be \"light\" or \"dark\""); return; }
 
     if (!settings_set_theme(dark))
         mcp_reply_error(call, "failed to set theme");
@@ -143,16 +139,8 @@ static void tool_get_datetime(McpCall *call) {
 }
 
 static void tool_set_datetime(McpCall *call) {
-    // Start from the current value so callers may set only some fields.
     DateTime dt = {0};
-    settings_get_datetime(&dt);
-    dt.year   = mcp_arg_int(call, "year",   dt.year);
-    dt.month  = mcp_arg_int(call, "month",  dt.month);
-    dt.day    = mcp_arg_int(call, "day",    dt.day);
-    dt.hour   = mcp_arg_int(call, "hour",   dt.hour);
-    dt.minute = mcp_arg_int(call, "minute", dt.minute);
-    dt.second = mcp_arg_int(call, "second", dt.second);
-
+    settings_datetime_from_json(call->doc, call->args, &dt);
     if (!settings_datetime_valid(&dt)) {
         mcp_reply_error(call, "invalid date/time fields");
         return;

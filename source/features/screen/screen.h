@@ -12,6 +12,7 @@ Result screen_capture_jpeg(ViLayerStack stack, u8 *buf, size_t buf_size, u64 *ou
 
 // Maps a query-param name to a ViLayerStack. Returns true if recognized.
 bool screen_parse_stack(const char *name, ViLayerStack *out);
+#define SCREEN_STACK_ERROR "invalid 'stack' (use screenshot|default|lcd|recording|lastframe)"
 
 // --- scaled / cropped screenshots (screen_scale.c, host-testable) -------------
 
@@ -31,6 +32,11 @@ void screen_opts_default(ScreenOpts *o);
 // Maps a scale factor (1, 0.5, 0.25 or 0.125) to its divisor. False for
 // anything else.
 bool screen_scale_div(double scale, int *div);
+
+// Re-encode at `quality` (1-100), or crop to a non-empty rectangle; both turn
+// transcoding on. False, with *o unchanged, for an invalid value.
+bool screen_opts_set_quality(ScreenOpts *o, int quality);
+bool screen_opts_set_crop(ScreenOpts *o, int x, int y, int w, int h);
 
 // Captures into request memory and transcodes when o->transcode is set.
 // Returns the JPEG (size in *out_size), or NULL with a message in err and the
@@ -83,6 +89,13 @@ typedef struct {
 #define SCREEN_WAIT_DEFAULT_THRESHOLD  1.0
 #define SCREEN_WAIT_STABLE_THRESHOLD   2.0
 #define SCREEN_WAIT_DEFAULT_STABLE_MS  1000
+
+// Defaults: wait for a change of the screenshot layer stack.
+void screen_wait_init(ScreenWait *w);
+
+// Sets the mode from "change" or "stable" ("stable" also switches to its
+// looser threshold). False for anything else.
+bool screen_wait_set_until(ScreenWait *w, const char *until);
 
 // Polls the screen (as 1/8 luma thumbnails, about 5 times a second) until the
 // condition holds or the timeout passes. Uses request memory, all of it

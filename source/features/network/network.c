@@ -48,6 +48,27 @@ NetworkResult network_set_dns(bool automatic, const char *primary, const char *s
     return apply_dns(automatic, p, s, err, errsz);
 }
 
+bool network_dns_from_json(const JsonDoc *doc, int obj, bool *automatic, char *primary,
+                           char *secondary, const char **err) {
+    *automatic = false;
+    int t = json_obj_get(doc, obj, "automatic");
+    if (t >= 0)
+        json_get_bool(doc, t, automatic);
+
+    memset(primary, 0, NETWORK_DNS_ARG_SIZE);
+    memset(secondary, 0, NETWORK_DNS_ARG_SIZE);
+    t = json_obj_get(doc, obj, "primary");
+    if (t >= 0) json_get_string(doc, t, primary, NETWORK_DNS_ARG_SIZE);
+    t = json_obj_get(doc, obj, "secondary");
+    if (t >= 0) json_get_string(doc, t, secondary, NETWORK_DNS_ARG_SIZE);
+
+    if (!*automatic && !primary[0]) {
+        *err = "provide 'primary' (IPv4) or set 'automatic':true";
+        return false;
+    }
+    return true;
+}
+
 #ifdef __SWITCH__
 #include <switch.h>
 #include "core/log.h"

@@ -19,7 +19,6 @@
 #include "platform/netif.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -54,9 +53,7 @@ static int connect_to(uint32_t s_addr) {
     int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd < 0)
         return -1;
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags >= 0)
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    http_set_nonblocking(fd);
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
@@ -272,4 +269,19 @@ bool nro_launch(const char *path, const char *args, size_t args_len, char *buf,
     else
         LOGW("nro", "launch %s failed: %s", path, err);
     return ok;
+}
+
+bool nro_args_from_json(const JsonDoc *doc, int obj, char *args, size_t *args_len,
+                        const char **err) {
+    *args_len = 0;
+    int arr = json_obj_get(doc, obj, "args");
+    for (int i = 0; arr >= 0 && i < json_arr_len(doc, arr); i++) {
+        char *dst = args + *args_len;
+        if (!json_get_string(doc, json_arr_get(doc, arr, i), dst, NRO_ARGS_MAX - *args_len)) {
+            *err = "'args' must be strings, 1 KB in all";
+            return false;
+        }
+        *args_len += strlen(dst) + 1;
+    }
+    return true;
 }

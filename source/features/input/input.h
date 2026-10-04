@@ -13,6 +13,13 @@
 #define INPUT_DEFAULT_TOUCH_MS 100
 #define INPUT_DEFAULT_SWIPE_MS 300
 
+// `ms`, or `fallback` when not positive, capped at INPUT_MAX_DURATION_MS.
+static inline int input_clamp_ms(int ms, int fallback) {
+    if (ms <= 0)
+        return fallback;
+    return ms > INPUT_MAX_DURATION_MS ? INPUT_MAX_DURATION_MS : ms;
+}
+
 // Detaches the virtual device and releases the HDLS work buffer. MUST be
 // called when the console prepares for sleep (holding the work buffer
 // across a sleep transition crashes the console); everything re-attaches

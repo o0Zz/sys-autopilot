@@ -124,6 +124,12 @@ static int clamp_touch_duration(int ms, int fallback) {
     return ms;
 }
 
+// Neutral controller: nothing pressed, sticks centred, battery full.
+static void reset_state(void) {
+    memset(&g_state, 0, sizeof(g_state));
+    g_state.battery_level = 4;
+}
+
 void input_suspend(void) {
     touch_release();
     if (g_attached) {
@@ -134,8 +140,7 @@ void input_suspend(void) {
         hiddbgReleaseHdlsWorkBuffer(g_session_id);
         g_workbuf_attached = false;
     }
-    memset(&g_state, 0, sizeof(g_state));
-    g_state.battery_level = 4;
+    reset_state();
 }
 
 Result input_attach(void) {
@@ -161,8 +166,7 @@ Result input_attach(void) {
     g_attached = true;
 
     // Push an initial neutral state so the controller registers.
-    memset(&g_state, 0, sizeof(g_state));
-    g_state.battery_level = 4;
+    reset_state();
     return hiddbgSetHdlsState(g_handle, &g_state);
 }
 
@@ -183,27 +187,19 @@ static Result apply_state(void) {
     return hiddbgSetHdlsState(g_handle, &g_state);
 }
 
-static int clamp_duration(int ms) {
-    if (ms <= 0)
-        return INPUT_DEFAULT_TAP_MS;
-    if (ms > INPUT_MAX_DURATION_MS)
-        return INPUT_MAX_DURATION_MS;
-    return ms;
-}
-
 Result input_tap(u64 mask, int duration_ms) {
     Result rc = input_attach();
     if (R_FAILED(rc))
         return rc;
 
-    duration_ms = clamp_duration(duration_ms);
+    duration_ms = input_clamp_ms(duration_ms, INPUT_DEFAULT_TAP_MS);
 
     g_state.buttons |= mask;
     rc = apply_state();
     if (R_FAILED(rc))
         return rc;
 
-    svcSleepThread((s64)duration_ms * 1000000LL);
+    sleep_ms(duration_ms);
 
     g_state.buttons &= ~mask;
     return apply_state();
@@ -257,7 +253,7 @@ Result input_stick(int side, float x, float y, int duration_ms) {
     if (duration_ms > 0) {
         if (duration_ms > INPUT_MAX_DURATION_MS)
             duration_ms = INPUT_MAX_DURATION_MS;
-        svcSleepThread((s64)duration_ms * 1000000LL);
+        sleep_ms(duration_ms);
         stick->x = 0;
         stick->y = 0;
         rc = apply_state();

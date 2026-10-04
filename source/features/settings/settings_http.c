@@ -4,7 +4,6 @@
 #include "features/settings/settings.h"
 
 #include <string.h>
-#include <strings.h>
 
 static bool is_get(const HttpRequest *req) {
     return strcmp(req->method, "GET") == 0;
@@ -24,16 +23,12 @@ static void handle_theme(HttpRequest *req) {
     JsonDoc *doc = request_read_json(req);
     if (!doc)
         return;
-    char val[16] = {0};
-    int t = json_obj_get(doc, 0, "theme");
-    if (t < 0 || !json_get_string(doc, t, val, sizeof(val))) {
-        http_send_error(req->fd, 400, "missing 'theme' (\"light\" or \"dark\")");
+    bool dark;
+    const char *err;
+    if (!settings_theme_from_json(doc, 0, &dark, &err)) {
+        http_send_error(req->fd, 400, err);
         return;
     }
-    bool dark;
-    if (strcasecmp(val, "dark") == 0)       dark = true;
-    else if (strcasecmp(val, "light") == 0) dark = false;
-    else { http_send_error(req->fd, 400, "'theme' must be \"light\" or \"dark\""); return; }
 
     if (!settings_set_theme(dark))
         http_send_error(req->fd, 500, "failed to set theme");
@@ -168,14 +163,7 @@ static void handle_datetime(HttpRequest *req) {
     if (!doc)
         return;
 
-    settings_get_datetime(&dt);
-    dt.year   = json_obj_int(doc, 0, "year",   dt.year);
-    dt.month  = json_obj_int(doc, 0, "month",  dt.month);
-    dt.day    = json_obj_int(doc, 0, "day",    dt.day);
-    dt.hour   = json_obj_int(doc, 0, "hour",   dt.hour);
-    dt.minute = json_obj_int(doc, 0, "minute", dt.minute);
-    dt.second = json_obj_int(doc, 0, "second", dt.second);
-
+    settings_datetime_from_json(doc, 0, &dt);
     if (!settings_datetime_valid(&dt)) {
         http_send_error(req->fd, 400, "invalid date/time fields");
         return;

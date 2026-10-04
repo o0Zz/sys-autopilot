@@ -5,7 +5,6 @@
 #include "features/nro/nro_tools.h"
 
 #include <stdio.h>
-#include <string.h>
 
 static void tool_launch_nro(McpCall *call) {
     char path[512];
@@ -19,16 +18,11 @@ static void tool_launch_nro(McpCall *call) {
         mcp_reply_rpc_error(call, -32603, "out of request memory");
         return;
     }
-    size_t args_len = 0;
-    int arr = json_obj_get(call->doc, call->args, "args");
-    for (int i = 0; arr >= 0 && i < json_arr_len(call->doc, arr); i++) {
-        char *dst = args + args_len;
-        if (!json_get_string(call->doc, json_arr_get(call->doc, arr, i), dst,
-                             NRO_ARGS_MAX - args_len)) {
-            mcp_reply_error(call, "'args' must be strings, 1 KB in all");
-            return;
-        }
-        args_len += strlen(dst) + 1;
+    size_t args_len;
+    const char *arg_err;
+    if (!nro_args_from_json(call->doc, call->args, args, &args_len, &arg_err)) {
+        mcp_reply_error(call, arg_err);
+        return;
     }
 
     char err[160];

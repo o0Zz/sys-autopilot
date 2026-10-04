@@ -5,6 +5,7 @@
 #include "core/request.h"
 #include "platform/device_info.h"
 #include "util/base64.h"
+#include "util/hex.h"
 #include "util/json.h"
 #include "util/sha256.h"
 
@@ -47,15 +48,6 @@ static uint64_t now_secs(void) {
 #else
     return (uint64_t)time(NULL);
 #endif
-}
-
-static void to_hex(const uint8_t *in, size_t n, char *out) {
-    static const char hex[] = "0123456789abcdef";
-    for (size_t i = 0; i < n; i++) {
-        out[i * 2] = hex[in[i] >> 4];
-        out[i * 2 + 1] = hex[in[i] & 0xF];
-    }
-    out[n * 2] = '\0';
 }
 
 // Appends src with HTML escaping (for embedding untrusted values in the
@@ -267,7 +259,7 @@ bool oauth_mint_token(char *out, size_t outsz, const char *note) {
         return false;
     uint8_t rnd[32];
     fill_random(rnd, sizeof(rnd));
-    to_hex(rnd, sizeof(rnd), out);
+    hex_encode(rnd, sizeof(rnd), out);
     return tokens_append(out, note);
 }
 
@@ -298,7 +290,7 @@ static AuthCode *code_create(const char *challenge, const char *redirect_uri) {
     }
     uint8_t rnd[16];
     fill_random(rnd, sizeof(rnd));
-    to_hex(rnd, sizeof(rnd), slot->code);
+    hex_encode(rnd, sizeof(rnd), slot->code);
     snprintf(slot->challenge, sizeof(slot->challenge), "%.*s",
              (int)sizeof(slot->challenge) - 1, challenge);
     snprintf(slot->redirect_uri, sizeof(slot->redirect_uri), "%s", redirect_uri);

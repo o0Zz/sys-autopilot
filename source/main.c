@@ -71,14 +71,12 @@ void __appInit(void)
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_SM));
 
-    rc = setsysInitialize();
-    if (R_SUCCEEDED(rc)) {
-        SetSysFirmwareVersion fw;
-        rc = setsysGetFirmwareVersion(&fw);
-        if (R_SUCCEEDED(rc))
-            hosversionSet(MAKEHOSVERSION(fw.major, fw.minor, fw.micro));
-        setsysExit();
-    }
+    // Gather device facts (OS version, model, serial, Atmosphère) for the
+    // mDNS TXT record and the startup log. First, because it also caches the OS
+    // version (hosversionSet) that the services opened below check. Needs the
+    // sm session (set:sys/spl). Best-effort; failures just leave the
+    // corresponding fields empty.
+    device_info_init();
 
     rc = fsInitialize();
     if (R_FAILED(rc))
@@ -121,12 +119,6 @@ void __appInit(void)
     // we actually ping is decided by the server loop.
     if (!power_keepawake_init())
         LOGW("power", "idle:sys unavailable; auto-sleep cannot be held off");
-
-    // Gather device facts (model/firmware/Atmosphère) for the mDNS TXT record
-    // now, while the sm session is still open: the underlying set:sys/spl
-    // smGetService calls would fail after smExit(). Best-effort; failures just
-    // leave the corresponding TXT fields empty.
-    device_info_init();
 
     // Network Interface Manager: nifm gives us the real LAN IP for mDNS
     // (gethostid() only ever returns loopback in a sysmodule). Must be opened

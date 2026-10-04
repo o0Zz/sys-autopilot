@@ -22,15 +22,11 @@ static void post_launch(HttpRequest *req) {
         http_send_error(req->fd, 500, "out of request memory");
         return;
     }
-    size_t args_len = 0;
-    int arr = json_obj_get(doc, 0, "args");
-    for (int i = 0; arr >= 0 && i < json_arr_len(doc, arr); i++) {
-        char *dst = args + args_len;
-        if (!json_get_string(doc, json_arr_get(doc, arr, i), dst, NRO_ARGS_MAX - args_len)) {
-            http_send_error(req->fd, 400, "'args' must be strings, 1 KB in all");
-            return;
-        }
-        args_len += strlen(dst) + 1;
+    size_t args_len;
+    const char *arg_err;
+    if (!nro_args_from_json(doc, 0, args, &args_len, &arg_err)) {
+        http_send_error(req->fd, 400, arg_err);
+        return;
     }
 
     char err[160];
