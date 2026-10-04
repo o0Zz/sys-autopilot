@@ -37,7 +37,7 @@ typedef void (*McpToolHandler)(McpCall *call);
 void mcp_server_http_register(void);
 
 // Adds a tool. `def` must outlive the server (the generated constants do).
-// Returns false when the table is full.
+// Logs and drops the tool when the table is full.
 void mcp_server_register_tool(const McpToolDef *def, McpToolHandler handler);
 
 // --- replies (each sends one complete response) ------------------------------

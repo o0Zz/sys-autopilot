@@ -15,8 +15,10 @@
 #include <switch.h>
 
 // Keep-awake ping period. Must stay comfortably under the ~10s idle policy the
-// lock screen applies, which is far shorter than any auto-sleep plan exposed in
-// System Settings. One idle:sys IPC per period is negligible.
+// lock screen ("press A three times", shown after boot and after every wake)
+// applies, which is far shorter than any auto-sleep plan exposed in System
+// Settings: a 30s ping never landed inside it and the console dropped straight
+// back to sleep. One idle:sys IPC per period is negligible.
 #define KEEPAWAKE_INTERVAL_NS (5ULL * 1000000000ULL)
 
 static int create_listener(int port) {
@@ -235,9 +237,8 @@ void http_server_run(const Config *cfg) {
     // changes (sends fail with EHOSTUNREACH until then) instead of giving up.
     int mdns_announce_left = 0;
 
-    // Throttle for the periodic nifm IP-change check (the reliable backstop;
-    // the connectivity event can fire before the address has settled or be
-    // missed entirely). The loop spins ~every 100ms; check every ~2s.
+    // Throttle for the periodic nifm IP-change check (see netif.h). The loop
+    // spins ~every 100ms; check every ~2s.
     int netcheck_ticks = 0;
 
     // A handler blocked in a wait tool keeps pinging through the idle hook.
@@ -285,20 +286,11 @@ void http_server_run(const Config *cfg) {
         // console then answers nothing until someone physically presses a
         // button. Runs only while awake, so the ping never lands inside the
         // sleep window.
-        //
-        // The interval has to beat the SHORTEST idle policy the system applies,
-        // not the shortest auto-sleep plan in System Settings (1 minute): the
-        // lock screen ("press A three times", shown after boot and after every
-        // wake) runs its own ~10s policy, so a 30s ping never landed inside it
-        // and the console dropped straight back to sleep.
         keepawake_maybe();
 
-        // React to network connectivity changes (wifi connect/disconnect,
-        // airplane mode, DHCP renewal) by polling nifm for our current IP every
-        // ~2s and acting when it changes. (We tested nifm's connectivity event
-        // on hardware; on an unsubmitted request it never fires, so polling is
-        // the actual working trigger.) The check runs only while awake, so no
-        // nifm IPC ever hits the sleep window. On an IP change we rebuild BOTH
+        // React to network connectivity changes by polling nifm for our current
+        // IP (see netif.h for why polling). The check runs only while awake, so
+        // no nifm IPC ever hits the sleep window. On an IP change we rebuild BOTH
         // sockets: a network teardown invalidates them, and the listener can
         // otherwise silently stop accepting (poll() doesn't always report it)
         // while mDNS keeps working, leaving the API unreachable on a live

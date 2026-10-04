@@ -98,7 +98,7 @@ void install_exit(void);
 // Installs a streamed title (NSP or XCI; auto-detected from the stream's magic)
 // via read_fn(ctx,...). Fills *out. Returns out->ok. Performs
 // rollback of partially-written content on failure. `work` is a caller-owned
-// buffer of install_work_size() bytes (about 250K; a request handler takes it
+// buffer of install_work_size() bytes (about 215K; a request handler takes it
 // from request memory).
 size_t install_work_size(void);
 bool install_stream(InstallReadFn read_fn, void *ctx,

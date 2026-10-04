@@ -17,7 +17,7 @@ typedef enum {
 
 // Registers the PSC PM module. Must be called while an sm session is open
 // (i.e. from __appInit for the sysmodule). Returns false when PSC is
-// unavailable (dev .nro build); power_poll() then always returns None.
+// unavailable; power_poll() then always returns None.
 bool power_init(void);
 
 // Non-blocking check for a pending power transition. The caller must
@@ -45,7 +45,7 @@ typedef enum {
 } PowerAction;
 
 // Initializes the spsm session used to execute power actions. Must be called
-// while an sm session is open. Returns false when unavailable (dev .nro).
+// while an sm session is open. Returns false when unavailable.
 bool power_spsm_init(void);
 void power_spsm_exit(void);
 
@@ -68,7 +68,7 @@ bool power_perform(PowerAction action);
 // persisted: stop the sysmodule and auto-sleep behaves as configured again.
 
 // Opens the idle:sys session. Must be called while an sm session is open.
-// Returns false when unavailable (dev .nro); power_keepawake_tick() is then a
+// Returns false when unavailable; power_keepawake_tick() is then a
 // no-op.
 bool power_keepawake_init(void);
 void power_keepawake_exit(void);

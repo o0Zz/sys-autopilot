@@ -6,8 +6,6 @@
 
 #include <switch.h>
 
-// On the Switch, back the streaming context with libnx's hardware-accelerated
-// Sha256Context.
 _Static_assert(sizeof(Sha256Context) <= sizeof(((Sha256Stream *)0)->opaque),
                "Sha256Stream storage too small for libnx Sha256Context");
 

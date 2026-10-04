@@ -57,7 +57,6 @@ static PowerEvent poll_psc(void) {
     if (!g_initialized)
         return PowerEvent_None;
 
-    // Non-blocking: timeout 0 returns immediately when no request is pending.
     if (R_FAILED(eventWait(&g_module.event, 0)))
         return PowerEvent_None;
 

@@ -289,7 +289,7 @@ static void handle_initialize(HttpRequest *req, const char *id, const JsonDoc *d
 }
 
 // tools/list: {"tools":[<def>,<def>,...]}, streamed straight from the
-// registered definitions (about 19K in all) rather than assembled in memory.
+// registered definitions (about 27K in all) rather than assembled in memory.
 static void handle_tools_list(HttpRequest *req, const char *id) {
     static const char pre[] = "{\"tools\":[";
     static const char post[] = "]}";

@@ -23,7 +23,7 @@ typedef struct {
 
 // Opens the pm:shell session. Must be called while an sm session
 // is open (i.e. from __appInit for the sysmodule). Returns false when pm is
-// unavailable, e.g. in the dev .nro build; process_available() then stays false
+// unavailable; process_available() then stays false
 // and every call below fails cleanly.
 bool process_init(void);
 void process_exit(void);

@@ -19,8 +19,8 @@
 u32 __nx_applet_type = AppletType_None;
 u32 __nx_fs_num_sessions = 1;
 
-// Sysmodules use time:s (the npdm grants it); used for the OAuth
-// "# issued <date>" stamps and the read-only get_datetime tool.
+// Sysmodules use time:s (the npdm grants it); used for log timestamps, the
+// OAuth "# issued <date>" stamps and the read-only get_datetime tool.
 u32 __nx_time_service_type = TimeServiceType_System;
 
 // Internal libnx helper that wires newlib's time() to the time service.
@@ -94,7 +94,7 @@ void __appInit(void)
     if (R_FAILED(rc))
         diagAbortWithResult(rc);
 
-    // Optional: wall-clock time for OAuth token issuance stamps.
+    // Optional: wall-clock time for log timestamps and OAuth token stamps.
     rc = timeInitialize();
     if (R_SUCCEEDED(rc))
         __libnx_init_time();
@@ -162,7 +162,6 @@ int main(int argc, char* argv[])
     LOGI("main", "model=%s firmware=%s atmosphere=%s", dev->model, dev->firmware,
          dev->atmosphere[0] != '\0' ? dev->atmosphere : "n/a");
 
-    // Every feature plugs its routes and MCP tools into the servers.
     features_register(&cfg);
 
     // Blocks forever.

@@ -621,7 +621,6 @@ static void handle_token(HttpRequest *req) {
         return;
     }
 
-    // Mint and persist the token.
     char token[TOKEN_HEX_LEN + 1];
     if (!oauth_mint_token(token, sizeof(token), "via oauth login")) {
         send_oauth_error(req->fd, 500, "server_error", "failed to persist token");
